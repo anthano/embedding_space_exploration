@@ -1,0 +1,120 @@
+---
+repos:
+  - repo: meta
+    hooks:
+      # - id: check-hooks-apply  # Leave nbstripout in here.
+      - id: check-useless-excludes
+  - repo: https://github.com/tox-dev/pyproject-fmt
+    rev: v2.25.1
+    hooks:
+      - id: pyproject-fmt
+  - repo: https://github.com/lyz-code/yamlfix
+    rev: 1.19.1
+    hooks:
+      - id: yamlfix
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args:
+          - --maxkb=25
+      - id: check-ast
+      - id: check-case-conflict
+      - id: check-docstring-first
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-vcs-permalinks
+      - id: check-yaml
+      - id: debug-statements
+      - id: end-of-file-fixer
+      - id: fix-byte-order-marker
+        types:
+          - text
+      - id: mixed-line-ending
+        args:
+          - --fix=lf
+        description: Forces to replace line ending by the UNIX 'lf' character.
+      - id: name-tests-test
+        args:
+          - --pytest-test-first
+      - id: no-commit-to-branch
+        args:
+          - --branch
+          - main
+      - id: trailing-whitespace
+  - repo: https://github.com/adrienverge/yamllint.git
+    rev: v1.38.0
+    hooks:
+      - id: yamllint
+        exclude: ^(docs_template/\.readthedocs.yaml)$
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.37.4
+    hooks:
+      - id: check-github-workflows
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.20
+    hooks:
+      - id: ruff-check
+        args:
+          - --fix
+        types_or:
+          - jupyter
+          - pyi
+          - python
+      - id: ruff-format
+        types_or:
+          - jupyter
+          - pyi
+          - python
+  - repo: https://github.com/astral-sh/ty-pre-commit
+    rev: v0.0.56
+    hooks:
+      - id: ty
+        # `--no-project` stops uv from creating a `.venv`/`uv.lock` in this
+        # pixi-managed repo; ty resolves third-party imports from the env named
+        # in `[tool.ty] environment.python` (run `pixi install` once).
+        args:
+          - --no-project
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.9.1
+    hooks:
+      - id: nbstripout
+        args:
+          - --extra-keys
+          - metadata.language_info.version metadata.vscode
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 1.0.0
+    hooks:
+      - id: mdformat
+        additional_dependencies:
+          - mdformat-gfm
+          - mdformat-gfm-alerts
+          - mdformat-ruff
+        args:
+          - --wrap
+          - "88"
+        files: (AGENTS\.md|CLAUDE\.md|README\.md)
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 1.0.0
+    hooks:
+      - id: mdformat
+        additional_dependencies:
+          - mdformat-myst
+          - mdformat-ruff
+        args:
+          - --wrap
+          - "88"
+        files: (docs_template/.|documents/.)
+        exclude: (documents/presentation.md)
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.2
+    hooks:
+      - id: codespell
+        additional_dependencies:
+          - tomli
+ci:
+  autoupdate_schedule: monthly
+  # pre-commit.ci has no pixi environments and blocks network at hook runtime;
+  # the GitHub Actions `run-ty` job covers type checking.
+  skip:
+    - ty

@@ -1,0 +1,191 @@
+[build-system]
+build-backend = "hatchling.build"
+requires = [ "hatch-vcs", "hatchling" ]
+
+[project]
+name = "template-project"
+description = "Template for reproducible research projects in economics"
+keywords = [
+  "Economics",
+  "Reproducible Research",
+]
+requires-python = ">=3.14,<3.15"
+classifiers = [
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS :: MacOS X",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.14",
+]
+dynamic = [ "version" ]
+[[project.authors]]
+name = "JANE DOE"
+email = "janedoe@example-university.com"
+[project.license]
+text = "MIT"
+[[project.maintainers]]
+name = "JANE DOE"
+email = "janedoe@example-university.com"
+[project.readme]
+content-type = "text/markdown"
+file = "README.md"
+[project.urls]
+Changelog = "https://github.com/OpenSourceEconomics/econ-project-templates"
+Documentation = "https://github.com/OpenSourceEconomics/econ-project-templates"
+Github = "https://github.com/OpenSourceEconomics/econ-project-templates"
+Tracker = "https://github.com/OpenSourceEconomics/econ-project-templates/issues"
+
+[tool.hatch]
+version.source = "vcs"
+metadata.allow-direct-references = true
+build.hooks.vcs.version-file = "src/template_project/_version.py"
+build.targets.sdist.exclude = [ "tests" ]
+build.targets.sdist.only-packages = true
+build.targets.wheel.only-include = [ "src" ]
+build.targets.wheel.sources = [ "src" ]
+
+[tool.pixi.dependencies]
+jupyter-book = ">=2.0"
+jupyterlab = "*"
+# Pin <26 (TEMPORARY): the node 26.x line carries a security backport
+# (response-queue-poisoning guard on idle http.Agent sockets) that trips a
+# latent node-fetch@2 keep-alive+gzip bug, so mystmd's book-theme favicon fetch
+# dies with ERR_STREAM_PREMATURE_CLOSE and the docs build fails. See
+# https://github.com/nodejs/node/issues/63989 (fix: PR #64004, merged to main
+# 2026-06-20 but not yet in a released 26.x). node 25.9 is unaffected only
+# because it predates the backport -- it is EOL (2026-06-01), so move to a fixed
+# 26.x and drop this pin as soon as conda-forge ships one.
+nodejs = "<26"
+numpy = ">=2.4"
+pandas = ">=2.2"
+plotly = ">=6.5"
+pyarrow = "*"
+prek = "*"
+pygraphviz = "*"
+pytask = "*"
+pytask-parallel = "*"
+pytest = "*"
+pytest-cov = "*"
+pytest-xdist = "*"
+python-kaleido = ">=1.1"
+statsmodels = "*"
+[tool.pixi.environments]
+docs = { features = [ "docs" ], solve-group = "default" }
+[tool.pixi.feature.docs.dependencies]
+jupyter-book = ">=2.0"
+mystmd = "*"
+[tool.pixi.feature.docs.tasks]
+docs = { cmd = "jupyter book build --html", cwd = "docs_template/source" }
+view-docs = { cmd = "jupyter book start", cwd = "docs_template/source" }
+check-urls = { cmd = "jupyter book build --html --check-links --strict", cwd = "docs_template/source" }
+recreate-dag = { cmd = "pixi run pytask dag --rank-direction TB --output-path docs_template/source/figures/dag.svg" }
+[tool.pixi.pypi-dependencies]
+template_project = { path = ".", editable = true }
+pdbp = "*"
+tabulate = "*"
+[tool.pixi.tasks]
+tests = { cmd = "pytest", description = "Run tests" }
+tests-with-cov = { cmd = "pytest --cov-report=xml --cov=./", description = "Run tests with coverage" }
+view-paper = { cmd = "jupyter book start", description = "View the HTML paper in browser" }
+view-pres = { cmd = "npx slidev documents/presentation.md", description = "View the presentation in browser" }
+[tool.pixi.workspace]
+channels = [ "conda-forge" ]
+platforms = [ "linux-64", "osx-64", "osx-arm64", "win-64" ]
+
+[tool.ruff]
+fix = true
+[tool.ruff.lint]
+select = [ "ALL" ]
+extend-ignore = [
+  "ANN",     # Missing type annotations
+  "COM812",  # Conflicts with ruff-format
+  "D10",     # Missing docstrings
+  "EM101",   # Exception must not use a string literal
+  "EM102",   # Exception must not use an f-string literal
+  "FIX002",  # Line contains TODO
+  "ISC001",  # Conflicts with ruff-format
+  "PLR0913", # Too many arguments in function definition
+  "RET504",  # Don't force to calculate upon return
+  "S101",    # Use of `assert` detected
+  "S301",    # pickle module (standard intermediate format)
+  # TC001-TC003: TYPE_CHECKING guards. Always ignore for Python 3.14+ projects
+  # (PEP 649 deferred evaluation makes them unnecessary).
+  "TC001",   # Move application import into a type-checking block
+  "TC002",   # Move third-party import into a type-checking block
+  "TC003",   # Move standard library import into a type-checking block
+  "TRY003",  # Long messages outside exception class
+]
+per-file-ignores."task_*.py" = [
+  "ANN",    # Missing type annotations
+  "ARG001", # Unused function argument (pytask signatures)
+  "S603",   # subprocess call (pytask tasks need it)
+]
+per-file-ignores."tests/*" = [
+  "D",       # Docstrings
+  "INP001",  # Implicit namespace packages
+  "PD011",   # Use `.to_numpy()` instead of `.values`
+  "PLR2004", # Magic value used in comparison
+  "S101",    # Use of assert
+]
+pydocstyle.convention = "google"
+
+[tool.codespell]
+ignore-words = ".codespell-ignore-words"
+skip = "package-lock.json,node_modules,pixi.lock,.codespell-ignore-words"
+
+[tool.pyproject-fmt]
+column_width = 88
+max_supported_python = "3.14"
+table_format = "long"
+collapse_tables = [ "tool.hatch", "tool.pytest", "tool.pytask", "tool.ty" ]
+expand_tables = [
+  "tool.pixi.dependencies",
+  "tool.pixi.environments",
+  "tool.pixi.feature.docs.dependencies",
+  "tool.pixi.feature.docs.tasks",
+  "tool.pixi.pypi-dependencies",
+  "tool.pixi.tasks",
+  "tool.pixi.workspace",
+]
+
+[tool.ty]
+src.include = [ "src/", "tests/" ]
+# ty resolves third-party imports from this pixi env (the official ty-pre-commit hook
+# runs with `--no-project`, so uv neither creates a `.venv` nor resolves deps). Run
+# `pixi install` once.
+environment.python = ".pixi/envs/default"
+rules.ambiguous-protocol-member = "error"
+rules.deprecated = "error"
+rules.division-by-zero = "error"
+rules.ignore-comment-unknown-rule = "error"
+rules.ineffective-final = "error"
+rules.invalid-enum-member-annotation = "error"
+rules.invalid-ignore-comment = "error"
+rules.invalid-legacy-positional-parameter = "error"
+rules.possibly-missing-submodule = "error"
+rules.redundant-cast = "error"
+rules.unused-awaitable = "error"
+rules.unused-ignore-comment = "error"
+
+[tool.pytest]
+ini_options.norecursedirs = [ "docs" ]
+ini_options.addopts = "--pdbcls=pdbp:Pdb"
+ini_options.markers = [
+  "end_to_end: Flag for tests that cover the whole program.",
+  "integration: Flag for integration tests which may comprise of multiple unit tests.",
+  "unit: Flag for unit tests which target mainly a single function.",
+  "wip: Tests that are work-in-progress.",
+]
+ini_options.filterwarnings = []
+
+[tool.yamlfix]
+line_length = 88
+none_representation = "null"
+preserve_quotes = true
+sequence_style = "block_style"
+
+[tool.pytask]
+ini_options.paths = [ "./src/template_project", "./documents" ]
+ini_options.pdbcls = "pdbp:Pdb"

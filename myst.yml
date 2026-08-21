@@ -1,0 +1,33 @@
+---
+# See docs at: https://mystmd.org/guide/frontmatter
+version: 1
+project:
+  id: template-project
+  title: EXAMPLE PROJECT
+  description: Template for reproducible research projects in economics
+  authors:
+    - name: JANE DOE
+      affiliations:
+        - EXAMPLE UNIVERSITY
+      email: janedoe@example-university.com
+  keywords:
+    - economics
+    - reproducible research
+  toc:
+    - file: documents/paper.md
+  exports:
+    - format: pdf
+      template: arxiv_nips
+      articles: documents/paper.md
+      parts:
+        abstract: abstract
+      bibtex: documents/refs.bib
+  exclude:
+    - documents/presentation.md
+    - documents/tables/*
+    - documents/public/*
+site:
+  template: book-theme
+  options:
+    favicon: null
+    logo: null

@@ -1,6 +1,9 @@
 # Claude Code
 .claude/
 
+# Local link to the research notes vault (see AGENTS.md)
+/notes
+
 # Data files
 *.feather
 *.parquet

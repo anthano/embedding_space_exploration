@@ -8,6 +8,16 @@ Research project exploring embedding spaces. Uses pytask for workflow orchestrat
 Pixi for environment management. Built on the
 [econ-project-templates](https://github.com/OpenSourceEconomics/econ-project-templates).
 
+## Research Notes
+
+The scientific reasoning behind this project (research questions, study design,
+validation battery, paper outline) is developed in a separate notes vault, not in this
+repository. If a `notes/` directory exists at the repo root, it is a local, untracked
+link to that vault — read it for design rationale before changing analysis code, and
+treat it as the source of truth for *why* something is done.
+
+To set it up locally: `ln -s "/path/to/your/vault/folder" notes` (it is gitignored).
+
 ## Build & Test
 
 ```bash

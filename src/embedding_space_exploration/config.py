@@ -8,3 +8,6 @@ ROOT: Path = SRC.joinpath("..", "..").resolve()
 BLD: Path = ROOT.joinpath("bld").resolve()
 
 DOCUMENTS: Path = ROOT.joinpath("documents").resolve()
+
+# Per-representation artifacts (embeddings, clusters, ...) under `MODELS / {key}`.
+MODELS_DIR: Path = BLD.joinpath("models").resolve()

@@ -82,5 +82,5 @@ jobs:
           cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
           frozen: true
       - name: Run ty
-        run: pixi run prek run ty --all-files
+        run: pixi run prek run ty --all-files --hook-stage manual
         shell: bash -el {0}

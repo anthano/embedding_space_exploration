@@ -4,8 +4,8 @@
 
 ## Overview
 
-Research project exploring embedding spaces. Uses pytask for workflow orchestration
-and Pixi for environment management. Built on the
+Research project exploring embedding spaces. Uses pytask for workflow orchestration and
+Pixi for environment management. Built on the
 [econ-project-templates](https://github.com/OpenSourceEconomics/econ-project-templates).
 
 ## Build & Test

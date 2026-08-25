@@ -1,13 +1,12 @@
-"""Tasks for compiling the paper and presentation(s)."""
+"""Tasks for compiling the paper."""
 
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import pytask
 
-from template_project.config import DOCUMENTS, ROOT
+from embedding_space_exploration.config import DOCUMENTS, ROOT
 
 for fmt, produces in {
     "pdf": ROOT / "paper.pdf",
@@ -19,8 +18,6 @@ for fmt, produces in {
         paper_md: Path = DOCUMENTS / "paper.md",
         myst_yml: Path = ROOT / "myst.yml",
         refs: Path = DOCUMENTS / "refs.bib",
-        figure: Path = DOCUMENTS / "public" / "smoking_by_marital_status.png",
-        table: Path = DOCUMENTS / "tables" / "estimation_results.md",
         produces: Path = produces,
     ) -> None:
         """Compile the paper from MyST Markdown using Jupyter Book 2.0."""
@@ -34,30 +31,3 @@ for fmt, produces in {
         if fmt == "pdf":
             build_pdf = ROOT / "_build" / "exports" / "paper.pdf"
             shutil.copy(build_pdf, produces)
-
-
-@pytask.task(id="presentation")
-def task_compile_presentation(
-    pres_md: Path = DOCUMENTS / "presentation.md",
-    table: Path = DOCUMENTS / "tables" / "estimation_results.md",
-    figure: Path = DOCUMENTS / "public" / "smoking_by_marital_status.png",
-    produces: Path = ROOT / "presentation.pdf",
-) -> None:
-    """Compile the presentation from Slidev Markdown to PDF."""
-    if sys.platform == "win32":
-        shell = True
-    else:
-        shell = False
-    npx_path = shutil.which("npx")
-    subprocess.run(
-        (
-            npx_path,
-            "slidev",
-            "export",
-            pres_md.absolute(),
-            "--output",
-            produces.absolute(),
-        ),
-        check=True,
-        shell=shell,
-    )

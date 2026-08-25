@@ -2,16 +2,14 @@
 # See docs at: https://mystmd.org/guide/frontmatter
 version: 1
 project:
-  id: template-project
-  title: EXAMPLE PROJECT
-  description: Template for reproducible research projects in economics
+  id: embedding-space-exploration
+  title: Embedding Space Exploration
+  description: Exploration of embedding spaces
   authors:
-    - name: JANE DOE
-      affiliations:
-        - EXAMPLE UNIVERSITY
-      email: janedoe@example-university.com
+    - name: anthano
+      email: anoja400@gmail.com
   keywords:
-    - economics
+    - embeddings
     - reproducible research
   toc:
     - file: documents/paper.md
@@ -23,7 +21,6 @@ project:
         abstract: abstract
       bibtex: documents/refs.bib
   exclude:
-    - documents/presentation.md
     - documents/tables/*
     - documents/public/*
 site:

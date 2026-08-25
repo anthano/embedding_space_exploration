@@ -1,44 +1,37 @@
 @.ai-instructions/profiles/tier-b-research.md
 
-# Templates for Reproducible Research Projects in Economics
+# Embedding Space Exploration
 
 ## Overview
 
-Template project demonstrating best practices for reproducible computational research.
-Uses pytask for workflow orchestration and Pixi for environment management.
+Research project exploring embedding spaces. Uses pytask for workflow orchestration
+and Pixi for environment management. Built on the
+[econ-project-templates](https://github.com/OpenSourceEconomics/econ-project-templates).
 
 ## Build & Test
 
 ```bash
-# Run the complete computational pipeline (data -> analysis -> figures/tables -> documents)
+# Run the complete computational pipeline (data -> analysis -> figures/tables -> paper)
 pixi run pytask
 
 # Run tests
 pixi run tests
 
 # Run a single test file or specific test
-pixi run pytest tests/test_template.py
-pixi run pytest tests/analysis/test_predict_template.py::test_predict_prob_by_model
+pixi run pytest tests/analysis/test_something.py::test_name
 
-# Run pre-commit hooks on all files (lint, format, and type-check with ty)
+# Run pre-commit hooks on all files
 pixi run prek
-
-# Type checking only (ty runs as a pre-commit hook, not a pixi task)
-pixi run prek run ty --all-files
 
 # Build documentation (Jupyter Book 2.0)
 pixi run -e docs docs
 
-# View documentation, paper, and presentation interactively
+# View documentation and paper interactively
 pixi run -e docs view-docs   # Project documentation
 pixi run view-paper          # Paper (HTML with live reload)
-pixi run view-pres           # Presentation (Slidev with live reload)
 
 # Regenerate the DAG visualization
 pixi run -e docs recreate-dag
-
-# Install Node.js dependencies (for Slidev presentations)
-pixi run npm install
 ```
 
 ## Architecture
@@ -48,49 +41,45 @@ pixi run npm install
 The project follows a task-based pipeline where each `task_*.py` file defines
 computational steps:
 
-1. **Data Management**
-   (`src/template_project/data_management/task_data_management_template.py`)
+1. **Data Management** (`src/embedding_space_exploration/data_management/`)
 
-   - Loads raw CSV data, cleans it, saves as feather to `bld/data/`
+   - Loads and cleans raw data, saves intermediate formats to `bld/data/`
 
-1. **Analysis** (`src/template_project/analysis/task_analysis_template.py`)
+1. **Analysis** (`src/embedding_space_exploration/analysis/`)
 
-   - Fits logit models and generates predictions
-   - Iterates over `TEMPLATE_GROUPS` defined in `config.py`
+   - Fits models and generates predictions
 
-1. **Final Outputs** (`src/template_project/final/task_final_template.py`)
+1. **Final Outputs** (`src/embedding_space_exploration/final/`)
 
-   - Creates publication-ready figures (PNG via Plotly + Kaleido)
-   - Generates results tables (Markdown format)
+   - Creates publication-ready figures (PNG via Plotly + Kaleido) and tables
 
 1. **Documents** (`documents/task_documents.py`)
 
    - Compiles paper to PDF and HTML (MyST Markdown via Jupyter Book 2.0)
-   - Compiles presentation (Slidev -> PDF)
 
 ### Key Configuration
 
-- `src/template_project/config.py`: Central path definitions (`SRC`, `ROOT`, `BLD`,
-  `DOCUMENTS`) and `TEMPLATE_GROUPS` for iterative task generation
+- `src/embedding_space_exploration/config.py`: Central path definitions (`SRC`, `ROOT`,
+  `BLD`, `DOCUMENTS`)
 - `pyproject.toml`: All tool configurations (Pixi, pytask, Ruff, pytest)
 - `myst.yml`: Jupyter Book 2.0 configuration for PDF export (in project root)
 
 ### Directory Conventions
 
-- `src/template_project/`: Source code (hand-written)
+- `src/embedding_space_exploration/`: Source code (hand-written)
 - `bld/`: Computational outputs (data, models, predictions, figures, tables)
 - `_build/`: Document build outputs (HTML site, PDF exports)
-- `documents/`: Academic paper and presentation sources (MyST Markdown and Slidev)
+- `documents/`: Academic paper sources (MyST Markdown)
 - `documents/public/`: Generated figures (intermediate outputs used by documents)
 - `documents/tables/`: Generated tables (intermediate outputs used by documents)
-- `docs_template/source/`: Project documentation (Jupyter Book)
+- `docs_template/source/`: Documentation of the upstream template (kept for reference)
 
 ### pytask Task Pattern
 
 Tasks are discovered by filename pattern `task_*.py`. For iterating over groups:
 
 ```python
-for group in TEMPLATE_GROUPS:
+for group in GROUPS:
 
     @pytask.task(id=group)
     def task_name(depends_on=..., produces=...): ...
@@ -98,10 +87,8 @@ for group in TEMPLATE_GROUPS:
 
 ## Code Quality
 
-- **Linting/Formatting**: Ruff with strict settings (`select = ["ALL"]`)
-- **Type checking**: ty (via the `ty-pre-commit` hook; resolves imports from the pixi
-  env named in `[tool.ty] environment.python`)
-- **Pre-commit**: Ruff, ty, yamlfix, yamllint, mdformat (MyST), nbstripout, codespell
+- **Linting/Formatting**: Ruff with an explicit rule selection (see `[tool.ruff.lint]`)
+- **Pre-commit**: see `.pre-commit-config.yaml`
 - **Docstrings**: Google convention
 - **Python version**: 3.14 (requires >=3.14, \<3.15)
 
@@ -109,5 +96,4 @@ for group in TEMPLATE_GROUPS:
 
 - Markers: `@pytest.mark.unit`, `@pytest.mark.integration`, `@pytest.mark.end_to_end`,
   `@pytest.mark.wip`
-- End-to-end test in `tests/test_template.py` runs the full pytask build
 - Uses `pdbp` as enhanced debugger (`--pdbcls=pdbp:Pdb`)

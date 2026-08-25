@@ -1,60 +1,33 @@
-# Econ Project Templates: Modern, Reproducible Research in Economics
+# Embedding Space Exploration
 
-![MIT license](https://img.shields.io/github/license/OpenSourceEconomics/econ-project-templates)
-[![Documentation Status](https://readthedocs.org/projects/econ-project-templates/badge/?version=stable)](https://econ-project-templates.readthedocs.io/en/stable/)
-[![image](https://github.com/OpenSourceEconomics/econ-project-templates/actions/workflows/main.yml/badge.svg)](https://github.com/OpenSourceEconomics/econ-project-templates/actions/workflows/main.yml)
-[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/OpenSourceEconomics/econ-project-templates/main.svg)](https://results.pre-commit.ci/latest/github/OpenSourceEconomics/econ-project-templates/main)
+Exploration of embedding spaces.
 
-This project provides a "batteries-included" template for economists to produce fully
-reproducible research. It replaces fragile, manual workflows with a robust, automated
-pipeline.
+## Getting started
 
-## Why Reproducibility?
-
-Reproducibility is about **your peace of mind**. It means knowing that if you find a
-mistake in your raw data three days before submission, you can re-run your entire
-project—tables, figures, and paper—with a single command. It means your future self (and
-your co-authors) can understand and run your code on a new machine without spending a
-week fighting dependency hell.
-
-## Quick Start (The "Magic" Moment)
-
-Experience the reproducibility of this template in less than five minutes:
-
-1. **Install [Pixi](https://pixi.sh/)** (our only prerequisite).
-1. **Clone this repository**.
-1. **Run and view the results**:
+[Pixi](https://pixi.sh/) is the only prerequisite. To run the full pipeline — data
+cleaning, analysis, figures and tables, and the compiled paper:
 
 ```bash
-# Data cleaning, analysis, plotting, etc
 pixi run pytask
-
-# View the research paper in your browser
-pixi run view-paper
-
-# View the presentation slides
-pixi run view-pres
 ```
 
-These commands automatically handle environment setup, data cleaning, analysis, and
-launching the output servers.
+To view the paper in a browser with live reload:
 
-## Documentation
+```bash
+pixi run view-paper
+```
 
-Full documentation is available at
-[econ-project-templates.readthedocs.io](https://econ-project-templates.readthedocs.io/).
+## Development
 
-## Contributing
+```bash
+pixi run tests    # run the test suite
+pixi run prek     # run the pre-commit hooks on all files
+```
 
-We welcome suggestions on anything from improving the documentation to reporting bugs
-and requesting new features. Please open an
-[issue](https://github.com/OpenSourceEconomics/econ-project-templates/issues) in these
-cases.
+Install the pre-commit hooks once per machine with `pixi run prek install`.
 
-### Contributors
+## Credits
 
-@hmgaudecker @timmens
-
-### Former Contributor and Creator of pytask
-
-@tobiasraabe
+Built on the
+[econ-project-templates](https://github.com/OpenSourceEconomics/econ-project-templates)
+by Hans-Martin von Gaudecker.

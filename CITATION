@@ -1,6 +1,6 @@
-@Unpublished{DOE2024,
-    Title  = "EXAMPLE PROJECT",
-    Author = "JANE DOE",
-    Year   = "2025",
-    Url    = "https://github.com/opensourceeconomics/econ-project-templates",
+@Unpublished{EmbeddingSpaceExploration2026,
+    Title  = "Embedding Space Exploration",
+    Author = "anthano",
+    Year   = "2026",
+    Url    = "https://github.com/anthano/embedding_space_exploration",
 }

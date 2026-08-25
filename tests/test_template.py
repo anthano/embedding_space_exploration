@@ -4,7 +4,6 @@ from pathlib import Path
 import pytask
 import pytest
 from pytask import ExitCode
-
 from template_project import config
 from template_project.config import ROOT
 

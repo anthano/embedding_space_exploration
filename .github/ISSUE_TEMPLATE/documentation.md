@@ -1,7 +1,7 @@
 ---
 
 name: Documentation Improvement
-about: Report wrong or missing documentation in template_project
+about: Report wrong or missing documentation in embedding_space_exploration
 title: "DOC:"
 labels: "documentation"
 

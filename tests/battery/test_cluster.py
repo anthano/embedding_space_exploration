@@ -6,7 +6,7 @@ from embedding_space_exploration.battery.cluster import (
     cluster_sizes,
     fit_clusters,
 )
-from embedding_space_exploration.splits import TEST, TRAIN, VAL
+from embedding_space_exploration.data_management.splits import TEST, TRAIN, VAL
 
 N_CLUSTERS = 2
 EXPECTED_SPLIT_METRIC_ROWS = 2

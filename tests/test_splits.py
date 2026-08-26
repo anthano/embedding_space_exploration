@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from embedding_space_exploration.splits import (
+from embedding_space_exploration.data_management.splits import (
     OPEN_SPLITS,
     TEST,
     TRAIN,

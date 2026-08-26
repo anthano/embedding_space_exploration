@@ -16,7 +16,11 @@ from embedding_space_exploration.config import (
     PRIMARY_SCALING,
     RANDOM_STATE,
 )
-from embedding_space_exploration.splits import OPEN_SPLITS, TRAIN, split_label
+from embedding_space_exploration.data_management.splits import (
+    OPEN_SPLITS,
+    TRAIN,
+    split_label,
+)
 
 
 def run_clustering(embeddings, split, *, scaling=PRIMARY_SCALING):

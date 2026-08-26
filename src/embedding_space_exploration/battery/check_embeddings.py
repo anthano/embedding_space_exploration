@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 from embedding_space_exploration.battery.prep import prepare_matrix
-from embedding_space_exploration.splits import fit_mask
+from embedding_space_exploration.data_management.splits import fit_mask
 
 
 def code_coverage(timeline, *, tokenizer):

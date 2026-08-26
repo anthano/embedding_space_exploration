@@ -12,6 +12,10 @@ DOCUMENTS: Path = ROOT.joinpath("documents").resolve()
 # Per-representation artifacts (embeddings, clusters, ...) under `MODELS / {key}`.
 MODELS_DIR: Path = BLD.joinpath("models").resolve()
 
+# Tier 0 calibration cells, one directory of frames per synthetic space, under
+# `SIMULATION_DIR / {cell_id}`.
+SIMULATION_DIR: Path = BLD.joinpath("simulation").resolve()
+
 
 # ======================================================================================
 # FROZEN ANALYSIS CONSTANTS

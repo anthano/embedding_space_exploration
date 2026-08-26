@@ -10,13 +10,17 @@ TODO: Write the abstract.
 \clearpage
 ```
 
-## Introduction
+```{include} introduction.md
+```
 
-TODO: Write the paper.
+```{include} methods.md
+```
 
-This project is built on the
-[econ-project-templates](https://github.com/OpenSourceEconomics/econ-project-templates)
-by {cite}`GaudeckerEconProjectTemplates`.
+```{include} results.md
+```
+
+```{include} discussion.md
+```
 
 ```{bibliography}
 ```

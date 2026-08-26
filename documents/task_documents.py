@@ -13,8 +13,22 @@ for fmt, produces in {
     "html": ROOT / "_build" / "html" / "index.html",
 }.items():
 
-    @pytask.task(id=f"paper-{fmt}")
+    @pytask.task(
+        id=f"paper-{fmt}",
+        kwargs={
+            "sections": {
+                name: DOCUMENTS / f"{name}.md"
+                for name in ("introduction", "methods", "results", "discussion")
+            },
+            "tables": {
+                name: DOCUMENTS / "tables" / f"tier0_{name}.md"
+                for name in ("separation", "continuum", "confound", "rankme", "cone")
+            },
+        },
+    )
     def task_compile_paper(
+        sections: dict[str, Path],
+        tables: dict[str, Path],
         paper_md: Path = DOCUMENTS / "paper.md",
         myst_yml: Path = ROOT / "myst.yml",
         refs: Path = DOCUMENTS / "refs.bib",

@@ -21,6 +21,12 @@ project:
         abstract: abstract
       bibtex: documents/refs.bib
   exclude:
+    # Pulled into paper.md with `{include}`; excluded so they are not also built
+    # as standalone pages.
+    - documents/introduction.md
+    - documents/methods.md
+    - documents/results.md
+    - documents/discussion.md
     - documents/tables/*
     - documents/public/*
 site:

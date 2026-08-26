@@ -1,9 +1,11 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from embedding_space_exploration.battery.cluster_tendency import (
     cluster_tendency_vs_null,
     null_gate_verdict,
+    null_margin,
 )
 
 # Small, fast sweep settings for the tests (the defaults are a heavy one-time gate).
@@ -51,18 +53,53 @@ def test_resphere_null_keeps_the_spherical_arm_on_the_shell():
     assert tendency.set_index("k").loc[3, "exceeds_null"]
 
 
-def test_null_gate_verdict_requires_null_and_threshold():
-    # k=2 beats the null but is below threshold (fragile); k=3 beats neither.
+def test_the_margin_is_the_share_of_headroom_above_the_null():
+    # 0.769 against a null median of 0.389 leaves 0.611 of headroom, of which
+    # 0.380 is captured -> 0.622. Bounded by 1 at every k, which is what makes
+    # k=4 and k=10 comparable at all.
+    tendency = pd.DataFrame(
+        {
+            "k": [4, 10],
+            "prediction_strength": [0.7691, 0.1701],
+            "null_ps_median": [0.3887, 0.1531],
+            "null_ps_p95": [0.4721, 0.1592],
+            "exceeds_null": [True, True],
+        }
+    )
+    margin = null_margin(tendency).set_index("k")["headroom_margin"]
+    assert margin.loc[4] == pytest.approx(0.622, abs=0.001)
+    assert margin.loc[10] == pytest.approx(0.020, abs=0.001)
+
+
+def test_the_verdict_reads_magnitude_not_the_largest_k_that_clears_a_bar():
+    # The failure this replaces: `exceeds_null` is near-automatic in the high-k
+    # tail, so a "largest k" rule lands on the weakest evidence in the table.
+    # k=4 carries the structure; k=10 is 2% above chance.
+    tendency = pd.DataFrame(
+        {
+            "k": [4, 10],
+            "prediction_strength": [0.7691, 0.1701],
+            "null_ps_median": [0.3887, 0.1531],
+            "null_ps_p95": [0.4721, 0.1592],
+            "exceeds_null": [True, True],
+        }
+    )
+    verdict = null_gate_verdict(tendency, threshold=0.25).iloc[0]
+    assert verdict["verdict"].startswith("DISCRETE")
+    assert verdict["k_at_max_margin"] == 4
+    assert verdict["max_headroom_margin"] == pytest.approx(0.622, abs=0.001)
+
+
+def test_beating_the_null_by_a_hair_is_weak_not_discrete():
     tendency = pd.DataFrame(
         {
             "k": [2, 3],
-            "prediction_strength": [0.72, 0.90],
-            "null_ps_median": [0.60, 0.88],
-            "null_ps_p95": [0.65, 0.95],
+            "prediction_strength": [0.62, 0.90],
+            "null_ps_median": [0.60, 0.92],
+            "null_ps_p95": [0.61, 0.95],
             "exceeds_null": [True, False],
         }
     )
-    verdict = null_gate_verdict(tendency, threshold=0.8).iloc[0]
+    verdict = null_gate_verdict(tendency, threshold=0.25).iloc[0]
     assert verdict["any_k_beats_null"]
-    assert np.isnan(verdict["largest_k_beats_null_and_threshold"])
     assert verdict["verdict"].startswith("WEAK")

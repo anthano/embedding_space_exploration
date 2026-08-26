@@ -2,7 +2,7 @@ import inspect
 from collections import Counter
 
 from embedding_space_exploration.simulation.generator import simulate_embeddings
-from embedding_space_exploration.simulation.task_generator import (
+from embedding_space_exploration.simulation.grid import (
     BASE,
     FRAMES,
     N_REPLICATES,

@@ -41,7 +41,7 @@ from embedding_space_exploration.battery.cluster import prediction_strength_swee
 from embedding_space_exploration.config import (
     K_VALUES,
     N_REPEATS,
-    PREDICTION_STRENGTH_THRESHOLD,
+    NULL_MARGIN_THRESHOLD,
     RANDOM_STATE,
 )
 
@@ -122,48 +122,93 @@ def cluster_tendency_vs_null(
     return pd.DataFrame(rows)
 
 
-def null_gate_verdict(tendency, *, threshold=PREDICTION_STRENGTH_THRESHOLD):
-    """Reduce the per-k table to a single go / no-go read for Step 2.
+def null_margin(tendency):
+    """Headroom-normalised distance from the real sweep to its own null band.
 
-    A k is "real" only if it both **beats the null band** and clears the pipeline's
-    prediction-strength ``threshold`` (stable *and* better-than-noise). If no k
-    qualifies, the honest verdict is that the space is continuous, not discrete.
+    ``exceeds_null`` is a boolean and throws the magnitude away: at ``k=10`` a
+    real 0.170 against a null median 0.153 counts the same as a real 0.769
+    against 0.389 at ``k=4``, though one is 2% above chance and the other is
+    nearly double it.
+
+    Prediction strength decays with k for real *and* null data, so no absolute
+    bar is comparable across k -- 0.8 is easy at k=2 and unreachable by k=8. Two
+    obvious normalisations are also k-biased: ``real - null`` favours low k,
+    where the whole scale is larger, and ``real / null`` favours high k, where
+    the ceiling ``1 / null`` is larger (1.7 at k=2, 6.5 at k=10).
+
+    So: the share of the **available headroom above the null** that the space
+    actually captures, ``(real - null_median) / (1 - null_median)``. Prediction
+    strength is bounded by 1, so this is bounded by 1 at every k -- comparable
+    across k, and across spaces, which is what an 18-way comparison needs.
 
     Args:
         tendency: Output of ``cluster_tendency_vs_null``.
-        threshold: The prediction-strength bar (default the pipeline's).
 
     Returns:
-        A single-row DataFrame: ``any_k_beats_null``,
-        ``largest_k_beats_null_and_threshold`` (NaN if none), ``verdict``.
+        ``tendency`` with a ``headroom_margin`` column added.
     """
-    beats = tendency[tendency["exceeds_null"]]
-    strong = beats[beats["prediction_strength"] >= threshold]
-    largest = int(strong["k"].max()) if not strong.empty else None
+    out = tendency.copy()
+    out["headroom_margin"] = (
+        (out["prediction_strength"] - out["null_ps_median"])
+        / (1 - out["null_ps_median"])
+    ).round(4)
+    return out
 
-    if largest is not None:
-        verdict = (
-            f"DISCRETE: structure at k<={largest} beats the covariance-matched null "
-            f"and clears prediction-strength {threshold}."
-        )
-    elif not beats.empty:
-        verdict = (
-            "WEAK: some k beat the null but none also clears the prediction-strength "
-            f"threshold {threshold} -- treat as fragile, not confirmed."
-        )
-    else:
+
+def null_gate_verdict(tendency, *, threshold=NULL_MARGIN_THRESHOLD):
+    """Reduce the per-k table to a single go / no-go read on discrete structure.
+
+    **This deliberately does not select k.** The gate's job is whether a space
+    has discrete structure at all; ``cluster.choose_k`` is a separate question,
+    and for a comparison across spaces k should be *fixed and declared* rather
+    than chosen per space -- a space clustered at k=4 and one at k=7 have
+    silhouettes that cannot be compared.
+
+    The rule this replaces took the *largest* k that beat the null and cleared an
+    absolute prediction-strength bar. That fails in a specific, reproducible way:
+    because ``exceeds_null`` is close to automatic in the high-k tail, "largest"
+    resolves to the weakest evidence available, and lowering the bar to admit a
+    genuine k admits several spurious larger ones first.
+
+    Note the verdict is *derived* from ``max_headroom_margin``, which is recorded
+    alongside it. Re-reading the same run under a different threshold costs
+    nothing.
+
+    Args:
+        tendency: Output of ``cluster_tendency_vs_null``.
+        threshold: Minimum headroom margin for structure to be believed.
+
+    Returns:
+        A single-row DataFrame: ``max_headroom_margin``, ``k_at_max_margin``
+        (a diagnostic, **not** a selected k), ``any_k_beats_null``, ``verdict``.
+    """
+    scored = null_margin(tendency)
+    best = scored.loc[scored["headroom_margin"].idxmax()]
+    beats_null = bool(scored["exceeds_null"].any())
+    margin = float(best["headroom_margin"])
+
+    if not beats_null:
         verdict = (
             "CONTINUOUS: no k beats a single covariance-matched Gaussian null -- no "
             "discrete cluster structure (a real result, not a failure)."
+        )
+    elif margin < threshold:
+        verdict = (
+            f"WEAK: the best margin over the null is {margin:.3f}, below {threshold} "
+            "-- more clusterable than noise, but not by much."
+        )
+    else:
+        verdict = (
+            f"DISCRETE: captures {margin:.3f} of the headroom above a "
+            "covariance-matched null."
         )
 
     return pd.DataFrame(
         [
             {
-                "any_k_beats_null": bool(not beats.empty),
-                "largest_k_beats_null_and_threshold": (
-                    largest if largest is not None else np.nan
-                ),
+                "max_headroom_margin": margin,
+                "k_at_max_margin": int(best["k"]),
+                "any_k_beats_null": beats_null,
                 "verdict": verdict,
             }
         ]

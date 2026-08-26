@@ -16,6 +16,10 @@ MODELS_DIR: Path = BLD.joinpath("models").resolve()
 # `SIMULATION_DIR / {cell_id}`.
 SIMULATION_DIR: Path = BLD.joinpath("simulation").resolve()
 
+# Battery measurements scored against the Tier 0 ground truth, under
+# `CALIBRATION_DIR / {cell_id} / {scaling}`.
+CALIBRATION_DIR: Path = BLD.joinpath("calibration").resolve()
+
 
 # ======================================================================================
 # FROZEN ANALYSIS CONSTANTS
@@ -49,6 +53,25 @@ N_REPEATS: int = 20
 # The primary preprocessing geometry: L2 -> PCA(N_COMPONENTS) -> re-L2. "raw" and
 # "standard" are sensitivity arms.
 PRIMARY_SCALING: str = "spherical"
+
+# PROPOSED, and Tier 0 is the evidence that should set it. Minimum share of the
+# headroom above the covariance-matched null (see `battery.cluster_tendency`) for
+# discrete structure to be believed. The verdict is *derived* from the recorded
+# margin, so re-reading a finished run under a different value costs nothing --
+# which is the point: the number can be fixed once the calibration sweep shows
+# what a planted structure scores and what a continuum scores.
+NULL_MARGIN_THRESHOLD: float = 0.25
+
+# PROPOSED. The single k every space is clustered at when spaces are *compared*.
+# Fixed rather than chosen per space: internal metrics are strongly k-dependent,
+# so a space clustered at k=4 and one at k=7 have silhouettes that are not
+# comparable, and the 18-way comparison silently stops being a comparison. The
+# gate reports a margin instead of selecting k (`cluster_tendency`), so nothing
+# in the label-free battery depends on this; it binds where an actual partition
+# is needed -- Y2's clustering score above all. Value still open: the reference
+# papers landed on 5 (Lian) and 7 (Fan), and Tier 0 should say whether the choice
+# matters much within that range.
+COMPARISON_K: int = 5
 
 # One seed for everything that resamples, fits or permutes.
 RANDOM_STATE: int = 0

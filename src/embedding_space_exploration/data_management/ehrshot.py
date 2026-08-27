@@ -129,12 +129,14 @@ def load_reference_features():
     """The CLMBR embedding matrix EHRSHOT ships, with its own index.
 
     406,379 label-time embeddings, one per unique ``(person_id,
-    prediction_time)`` pair across the benchmark. This is the release's *own*
-    output of the model our anchor cell reproduces, which is what lets the oracle
-    be split in two: the probe can be validated against the published AUROCs on
-    these vectors before any extraction exists, and our extraction can then be
-    checked against these vectors directly rather than through a downstream
-    AUROC that confounds the two.
+    prediction_time)`` pair across the benchmark. These are **CLMBR-t-base's**
+    vectors, not any grid cell's: verified 2026-08-27 against the shipped model
+    config (JAX/FEMR, vocab 65,536, context 496, rotary) versus our anchor's
+    (PyTorch GPT-2, vocab 39,818, context 512, learned positions). They are the
+    right object for validating the *probe* against the published AUROCs, which
+    needs no model and is what ``analysis.task_oracle`` does. They are the wrong
+    object for validating our *extraction*, which is checked per cell against
+    Wornow2025 instead.
 
     ~624 MB as float16. Loaded once and aligned per task via ``align_features``
     rather than re-read, which matters on a 8 GB machine.

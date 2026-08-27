@@ -12,9 +12,16 @@ tokenisation bug, a pooling bug, or a protocol bug, with no way to tell which.
 Splitting it gives two independent checks:
 
 - **here** -- protocol, on the release's own vectors, no model required; and
-- **Tier 1.2** -- extraction, comparing our vectors against these vectors
-  directly at matched ``(person_id, prediction_time)``, which is a far sharper
-  instrument than a downstream AUROC.
+- **Tier 1.2** -- extraction, per cell against the AUROCs Wornow2025 publishes
+  for those same cells.
+
+The Tier 1.2 half was originally specified as a *vector-level* check against
+these features, which is sharper. It is not runnable: verified 2026-08-27 that
+the shipped features come from CLMBR-t-base (JAX/FEMR, vocab 65,536, context
+496, rotary) and not from any cell in the grid -- our anchor is a Context Clues
+GPT-2 (vocab 39,818, context 512, learned positions). Different embedding tables
+cannot produce identical vectors from one timeline. The replacement checks 16
+cells we actually run instead of one we do not; see the Build Plan section 1.2.
 
 A failure here means our evaluation is not comparable to the literature, and
 every Y1 number downstream is uninterpretable. It is meant to be cheap and to run

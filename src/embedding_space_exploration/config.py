@@ -1,5 +1,6 @@
 """All the general configuration of the project."""
 
+import os
 from pathlib import Path
 
 SRC: Path = Path(__file__).parent.resolve()
@@ -15,6 +16,14 @@ MODELS_DIR: Path = BLD.joinpath("models").resolve()
 # Tier 0 calibration cells, one directory of frames per synthetic space, under
 # `SIMULATION_DIR / {cell_id}`.
 SIMULATION_DIR: Path = BLD.joinpath("simulation").resolve()
+
+# EHRSHOT as downloaded and extracted. Outside the repo because it is licensed
+# data, and overridable so the same code runs on a cluster without editing.
+# `pixi run pytask` needs only `ASSETS`; the timeline path additionally needs the
+# `meds_reader` extract, which is what Tier 1.2's extraction reads.
+EHRSHOT_ROOT: Path = Path(
+    os.environ.get("EHRSHOT_ROOT", "~/Documents/Datasets/EHRSHOT_files"),
+).expanduser()
 
 # Battery measurements scored against the Tier 0 ground truth, under
 # `CALIBRATION_DIR / {cell_id} / {scaling}`.

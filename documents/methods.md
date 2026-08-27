@@ -130,6 +130,75 @@ since internal metrics are strongly k-dependent and a space clustered at k=4 and
 clustered at k=7 have silhouettes that cannot be compared. Where an actual partition is
 required, k is fixed and declared across spaces.
 
+### Tier 1: EHRSHOT, and the two questions the oracle separates
+
+Tier 1 runs on EHRSHOT {cite}`Wornow2023`, a longitudinal benchmark of 6,739 patients
+drawn from one academic health system, with a native patient-level train/validation/test
+partition and fourteen binary prediction tasks. The cohort is taken exactly as released.
+A custom split would re-partition it and break the published-baseline comparison, which
+is the cheapest correctness check available on the whole pipeline; the three roles a
+held-out split is meant to serve are already carried by the benchmark's own — training
+fits, validation selects, test is scored once.
+
+The supervised probe follows the Context Clues protocol {cite}`Wornow2025` rather than a
+protocol of our own: frozen representations, a logistic-regression head, the
+regularisation strength tuned on the validation split, the test split scored once, and
+every AUROC reported with a bootstrapped 95% confidence interval over 1,000 resamples of
+that split. A comparison against published numbers only certifies anything if the
+protocol producing our numbers is the protocol that produced theirs.
+
+**The correctness check is two questions, and running them together answers neither.**
+An embedding pipeline can fail at tokenisation, at pooling, or at evaluation, and a
+single downstream AUROC compared against a paper cannot say which. EHRSHOT ships the
+CLMBR embeddings it evaluated — one vector for each of the 406,379 distinct (patient,
+prediction time) pairs across its benchmark — which allows the two to be separated.
+Running our probe on *their* vectors isolates the evaluation protocol and tests nothing
+upstream of it. Comparing *our* vectors against theirs at matched (patient, prediction
+time) then isolates extraction, and does so directly rather than through an AUROC that
+confounds both. Only the first is reported here; the second belongs with the extraction
+it checks.
+
+A task counts as reproduced when the published AUROC falls inside our confidence
+interval, rather than within a fixed distance of our estimate. The benchmark's test
+splits differ in size by two orders of magnitude, and so do the intervals — from 0.003
+on the largest laboratory task to 0.28 on the rarest diagnosis — so no single absolute
+tolerance is defensible at both ends. One that admits sampling noise on the rare task
+would wave through a catastrophic failure on the common one. Tasks whose interval is too
+wide to distinguish success from failure are marked as such rather than counted as
+evidence.
+
+### Anchoring, and why one anchor carries both outcomes
+
+An embedding is taken at a point in a patient's timeline, and which point is a design
+choice that decides what a comparison can mean. The claim this study is built to test is
+that a space's ranking *changes with the downstream task* — that a representation which
+predicts well may cluster poorly. Attributing such a reversal to the task requires
+everything else to be held fixed: the same vectors, the same patients, the same label.
+Reading supervised performance off one matrix and clustering off another would leave the
+reversal with a second and entirely plausible explanation, since models with longer
+context windows should fare relatively better wherever histories are longer.
+
+Both outcomes are therefore read from a single per-patient representation, anchored at
+each patient's last event before a declared outcome window, with the supervised label
+and the clustering phenotype defined strictly inside that window. The window is a
+temporal firewall. Without it the codes that define the phenotype sit in the history the
+model encoded, clusters recover it tautologically, and the gap between what a probe
+extracts and what a partition recovers — the object of study — stops being measurable.
+
+The anchor resolves a genuine tension rather than dissolving it. The firewall argues for
+anchoring early; the context-length contrast argues for anchoring late, because
+truncating histories is exactly the manipulation that would make long context useless by
+construction. The last event before the window is the latest anchor the firewall
+permits.
+
+This leaves two supervised evaluations with different jobs, and they are not
+interchangeable. The oracle scores every label at its own prediction time, as the
+published protocol requires, and its result is a statement about correctness. The
+experiment scores the shared anchor, and its result is a ranking across representations.
+The experiment's absolute values are not comparable to published ones and are not
+intended to be; the oracle has already established that the pipeline is sound, and a
+ranking does not need an external target.
+
 ### Frozen constants
 
 The decision rules are declared before the run rather than chosen after it: a threshold

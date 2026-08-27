@@ -112,11 +112,72 @@ The anisotropy knob is also recovered accurately, with measured mean cosine with
 of the declared value across the range, so Domain A's anisotropy statistic reports what
 it claims to.
 
-### What Tier 0 does not establish
+### Tier 1: the evaluation protocol, and what the cohort permits
 
-These are Gaussian spaces with orthonormally embedded latent structure, and real
-embeddings are neither. The results characterise what each check can and cannot see
-under conditions we constructed; they do not estimate how often such conditions arise in
-EHR foundation-model embeddings, and they provide no mapping from a measured value on
-real data back to a latent structure. Their use is negative and licensing: where a check
-is shown to be blind, a clean reading from it on real data licenses nothing.
+#### The probe reproduces the published benchmark
+
+```{include} tables/tier1_oracle.md
+```
+
+Scored on the CLMBR features EHRSHOT itself released, our probe recovers the published
+AUROC on all fourteen tasks, thirteen of them informatively. The largest tasks are the
+sharpest test: `lab_anemia` reproduces to 0.0002 on 58,155 test rows and
+`lab_thrombocytopenia` to 0.0004 on 56,338, where the confidence interval is narrow
+enough that a protocol error of any consequence would show. The evaluation is therefore
+the one behind the published numbers, and supervised results reported later rest on a
+head that has been checked rather than assumed.
+
+The single uninformative task is worth stating plainly, because it is the case that
+motivated scoring against intervals rather than against a fixed tolerance. `new_celiac`
+carries 94 positives in 7,129 rows; its interval spans 0.28 and contains both the
+published value and chance. It selected a regularisation strength three orders of
+magnitude from every other task, which is the same absence of signal seen from the other
+side — with nothing to fit, the validation search has nothing to choose on. The task is
+consistent with the published result and certifies nothing, and those are different
+statements.
+
+This establishes the evaluation and nothing upstream of it. Tokenisation and pooling are
+untested here by construction, and are checked separately against the same released
+vectors.
+
+#### Truncation is the normal case, which is what makes context length measurable
+
+```{include} tables/tier1_context.md
+```
+
+The median patient carries 3,129 clinical events, the mean 8,055, and the distribution
+is extremely heavy-tailed — a twentieth of patients have fewer than 65 events and a
+twentieth more than 31,854, with a maximum above 237,000. Records span a median of 8.9
+years under observation.
+
+The consequence is that no context length in the grid sees most patients whole. The
+shortest holds the complete record for one patient in five and shows the median patient
+about a sixth of theirs; the longest holds six in seven. **This is a precondition for
+the study rather than a limitation of it.** Had most records fitted inside the shortest
+window, the context-length contrast would have been null by construction and a quarter
+of the model grid would have been measuring nothing that varies. The factor instead has
+room across its entire range.
+
+It also settles a design question that could otherwise have been decided on convenience.
+Restricting analyses to patients whose histories fit every model's window would retain
+the fifth of the cohort with the shortest records — precisely the patients for whom a
+longer context cannot help — and would build the null result into the sample. Length is
+therefore stratified and reported, never used to restrict.
+
+Events approximate tokens without equalling them, so these shares are indicative until
+recomputed through the tokeniser itself.
+
+### What these results do not establish
+
+The Tier 1 results concern the evaluation apparatus and the cohort, not any
+representation. No model has been extracted and no comparison between spaces is reported
+here; the oracle certifies the head that later comparisons will use, and the cohort
+figures say what those comparisons will have room to detect.
+
+The Tier 0 results carry a different limit. These are Gaussian spaces with orthonormally
+embedded latent structure, and real embeddings are neither. They characterise what each
+check can and cannot see under conditions we constructed; they do not estimate how often
+such conditions arise in EHR foundation-model embeddings, and they provide no mapping
+from a measured value on real data back to a latent structure. Their use is negative and
+licensing: where a check is shown to be blind, a clean reading from it on real data
+licenses nothing.

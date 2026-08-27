@@ -76,6 +76,31 @@ TRUNCATION_SIDE = "left"
 BATCH_SIZE = 8
 
 
+def resolve_device(preference=None):
+    """The device to run on: an explicit choice, else the best one present.
+
+    CUDA first, then Apple's MPS, then CPU. Resolved rather than hard-coded
+    because the same cell has to run on a laptop for a smoke test and on a
+    cluster for the real pass, and the measured gap between those is the
+    difference between a weekend and a quarter.
+
+    Args:
+        preference: An explicit device string, or ``None`` to auto-detect.
+
+    Returns:
+        Device string.
+    """
+    if preference is not None:
+        return preference
+    import torch
+
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 # ======================================================================================
 # The pure half: reductions and truncation accounting
 # ======================================================================================
@@ -195,17 +220,34 @@ def _cutoff(value):
 # ======================================================================================
 
 
-def load_extractor(cell):
-    """Load one cell's tokeniser and model, with truncation pinned to the tail.
+def load_extractor(cell, device=None):
+    """Load one cell's tokeniser and backbone, with truncation pinned to the tail.
 
     Imported lazily and kept to one function so the pure half above stays
     runnable with neither ``torch`` nor ``hf_ehr`` installed.
 
+    Returns the **backbone**, not the causal-LM wrapper. The LM head projects
+    every position onto a 39,818-token vocabulary to produce logits this never
+    reads: at batch 8 and context 4096 that materialises a
+    ``[8, 4096, 39818]`` float32 tensor -- 5.2 GB, on a machine with 8 GB of
+    unified memory -- purely to be discarded. ``output_hidden_states=True``
+    compounds it by retaining all 13 layers when only the last is wanted.
+
+    It has to be reached as ``model.base_model`` rather than by loading
+    ``AutoModel`` directly. The checkpoints store backbone weights under a
+    ``transformer.`` prefix, so ``AutoModel.from_pretrained`` mismatches the
+    prefix, **silently reinitialises the word-embedding table** and warns rather
+    than raises -- measured max abs difference 9.13 against the correct vectors,
+    which is a random embedding table rather than a numerical wobble. Every
+    downstream number would have been computed on noise with nothing to show
+    for it in a traceback.
+
     Args:
         cell: A ``registry.Cell`` with ``loader == "hf_ehr"``.
+        device: Device string, or ``None`` to auto-detect.
 
     Returns:
-        Tuple of ``(tokenizer, model)``, the model in eval mode.
+        Tuple of ``(tokenizer, backbone, device)``, the backbone in eval mode.
 
     Raises:
         NotImplementedError: For the ``motor``, ``text`` and ``baseline``
@@ -223,9 +265,11 @@ def load_extractor(cell):
 
     tokenizer = CLMBRTokenizer.from_pretrained(cell.source)
     tokenizer.truncation_side = TRUNCATION_SIDE
-    model = AutoModelForCausalLM.from_pretrained(cell.source)
-    model.eval()
-    return tokenizer, model
+    device = resolve_device(device)
+    backbone = AutoModelForCausalLM.from_pretrained(cell.source).base_model
+    backbone.eval()
+    backbone.to(device)
+    return tokenizer, backbone, device
 
 
 def count_tokens(tokenizer, events):
@@ -245,7 +289,7 @@ def count_tokens(tokenizer, events):
     return len(tokenizer.convert_events_to_tokens(events))
 
 
-def embed_batch(tokenizer, model, batch_of_events, context, poolings):
+def embed_batch(tokenizer, backbone, batch_of_events, context, poolings, device="cpu"):
     """One forward pass, every requested readout of it.
 
     The whole reason ``registry.extraction_key`` exists: ``last`` and ``mean``
@@ -254,10 +298,11 @@ def embed_batch(tokenizer, model, batch_of_events, context, poolings):
 
     Args:
         tokenizer: A loaded ``CLMBRTokenizer``.
-        model: The loaded model, in eval mode.
+        backbone: The loaded backbone, in eval mode and already on ``device``.
         batch_of_events: List of per-patient ``Event`` lists.
         context: The cell's trained context window, used as ``max_length``.
         poolings: Readout names to compute.
+        device: Where the forward pass runs.
 
     Returns:
         Tuple of ``({pooling: [B, d] array}, [B] untruncated token counts)``.
@@ -272,18 +317,26 @@ def embed_batch(tokenizer, model, batch_of_events, context, poolings):
         padding=True,
         return_tensors="pt",
     )
+    mask_tensor = encoded["attention_mask"]
     with torch.no_grad():
-        outputs = model(
-            input_ids=encoded["input_ids"],
-            attention_mask=encoded["attention_mask"],
-            output_hidden_states=True,
+        outputs = backbone(
+            input_ids=encoded["input_ids"].to(device),
+            attention_mask=mask_tensor.to(device),
         )
-    hidden = outputs.hidden_states[-1].to(torch.float32).numpy()
-    mask = encoded["attention_mask"].numpy()
+    hidden = outputs.last_hidden_state.to(torch.float32).cpu().numpy()
+    mask = mask_tensor.numpy()
     return {name: pool(hidden, mask, name) for name in poolings}, untruncated
 
 
-def extract(database, index, cell, poolings, batch_size=BATCH_SIZE, progress=None):
+def extract(
+    database,
+    index,
+    cell,
+    poolings,
+    batch_size=BATCH_SIZE,
+    progress=None,
+    device=None,
+):
     """Embed every anchor in ``index`` under one cell.
 
     Args:
@@ -294,6 +347,7 @@ def extract(database, index, cell, poolings, batch_size=BATCH_SIZE, progress=Non
         poolings: Readout names to emit, one matrix each.
         batch_size: Rows per forward pass.
         progress: Optional callable invoked with the number of rows completed.
+        device: Device string, or ``None`` to auto-detect.
 
     Returns:
         Tuple of ``({pooling: DataFrame}, provenance DataFrame)``. Each matrix
@@ -301,7 +355,7 @@ def extract(database, index, cell, poolings, batch_size=BATCH_SIZE, progress=Non
         the provenance frame carries the same keys plus ``truncation_report``'s
         columns.
     """
-    tokenizer, model = load_extractor(cell)
+    tokenizer, backbone, device = load_extractor(cell, device)
     events_by_patient = _events_by_patient(database, index)
 
     vectors = {name: [] for name in poolings}
@@ -314,7 +368,9 @@ def extract(database, index, cell, poolings, batch_size=BATCH_SIZE, progress=Non
             )
             for row in rows.itertuples()
         ]
-        pooled, lengths = embed_batch(tokenizer, model, batch, cell.context, poolings)
+        pooled, lengths = embed_batch(
+            tokenizer, backbone, batch, cell.context, poolings, device
+        )
         for name in poolings:
             vectors[name].append(pooled[name])
         untruncated.extend(lengths)
@@ -330,7 +386,7 @@ def extract(database, index, cell, poolings, batch_size=BATCH_SIZE, progress=Non
     return matrices, provenance
 
 
-def extraction_record(cell, index, provenance, seconds):
+def extraction_record(cell, index, provenance, seconds, device=None):
     """The ``extraction.json`` payload: what ran, over what, and at what cost.
 
     Provenance rather than results, and written beside the matrices because a
@@ -342,6 +398,7 @@ def extraction_record(cell, index, provenance, seconds):
         index: The anchor index it ran over.
         provenance: The per-anchor frame from ``extract``.
         seconds: Wall clock for the run.
+        device: The device the forward passes ran on.
 
     Returns:
         JSON-serialisable dict.
@@ -351,6 +408,11 @@ def extraction_record(cell, index, provenance, seconds):
         "source": cell.source,
         "context": cell.context,
         "truncation_side": TRUNCATION_SIDE,
+        # Recorded because it is not purely a performance choice: CPU, MPS and
+        # CUDA do not agree bit-for-bit, so a cell re-run on different hardware
+        # is a different matrix in the last decimals. Cheap to note now, and the
+        # first thing to check if a determinism arm ever disagrees with itself.
+        "device": device,
         "n_anchors": len(index),
         "n_patients": int(index["person_id"].nunique()),
         # An anchor with no history before it embeds as a single PAD token, which

@@ -16,6 +16,7 @@ from embedding_space_exploration.data_management.extraction import (
     pool,
     pool_last,
     pool_mean,
+    resolve_device,
     truncation_report,
 )
 from embedding_space_exploration.registry import CELLS
@@ -132,3 +133,18 @@ def test_extraction_record_counts_empty_histories():
     index = pd.DataFrame({"person_id": [1, 2, 3], "cutoff": pd.NaT})
     provenance = truncation_report([0, 0, 900], context=cell.context)
     assert extraction_record(cell, index, provenance, 1.0)["n_empty_histories"] == 2
+
+
+@pytest.mark.parametrize("preference", ["cpu", "mps", "cuda", "cuda:1"])
+def test_an_explicit_device_is_honoured_without_importing_torch(preference):
+    """A cluster run names its device; only auto-detection needs to ask torch."""
+    assert resolve_device(preference) == preference
+
+
+def test_extraction_record_notes_the_device():
+    """CPU, MPS and CUDA do not agree bit-for-bit, so the matrix depends on it."""
+    cell = CELLS["gpt-base-512-last"]
+    index = pd.DataFrame({"person_id": [1], "cutoff": pd.NaT})
+    provenance = truncation_report([900], context=cell.context)
+    record = extraction_record(cell, index, provenance, 1.0, device="mps")
+    assert record["device"] == "mps"

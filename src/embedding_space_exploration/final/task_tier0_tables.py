@@ -12,6 +12,7 @@ which is a finding rather than something to average away.
 import pandas as pd
 import pytask
 
+from embedding_space_exploration.battery.cluster_tendency import verdict_label
 from embedding_space_exploration.config import CALIBRATION_DIR, DOCUMENTS
 
 TABLES = DOCUMENTS / "tables"
@@ -37,7 +38,7 @@ def task_tier0_tables(measurements, produces):
     """Write the five Tier 0 result tables."""
     frame = pd.read_parquet(measurements)
     frame["condition"] = frame["cell_id"].str.rsplit("-s", n=1).str[0]
-    primary = frame[frame["scaling"] == PRIMARY]
+    primary = _derived_verdict(frame[frame["scaling"] == PRIMARY])
 
     _write(
         _separation_table(primary),
@@ -202,6 +203,27 @@ def _cone_table(frame):
         .round(3)
         .reset_index()
     )
+
+
+def _derived_verdict(frame):
+    """Recompute the gate label from the recorded margin, not the stored string.
+
+    The harness writes the label it produced, which pins ``NULL_MARGIN_THRESHOLD``
+    to the value set when that run executed. Deriving it here is what makes the
+    claim in ``config`` true in practice -- revising the constant reaches the
+    paper's tables without a re-run, because the margin it is compared against
+    was recorded beside it.
+    """
+    labels = [
+        verdict_label(margin, beats_null=bool(beats)) if ran else None
+        for ran, margin, beats in zip(
+            frame["gate_ran"],
+            frame["gate_max_headroom_margin"],
+            frame["gate_any_k_beats_null"],
+            strict=True,
+        )
+    ]
+    return frame.assign(gate_verdict=labels)
 
 
 def _verdict(series):

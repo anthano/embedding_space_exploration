@@ -155,6 +155,30 @@ def null_margin(tendency):
     return out
 
 
+def verdict_label(margin, *, beats_null, threshold=NULL_MARGIN_THRESHOLD):
+    """The gate's three-way label, as a function of the recorded margin alone.
+
+    Split out from ``null_gate_verdict`` so that a *finished* run can be re-read
+    under a different threshold. The margin is the continuous statistic and does
+    not go stale; the label is the only part that depends on the constant. Any
+    consumer that reports a verdict should derive it here rather than read a
+    stored label, which would freeze ``NULL_MARGIN_THRESHOLD`` at whatever value
+    happened to be set when that run was executed -- and so silently keep
+    reporting the old bar after the constant is revised.
+
+    Args:
+        margin: ``max_headroom_margin`` for the space.
+        beats_null: Whether any k in the sweep exceeded the null band.
+        threshold: Minimum headroom margin for structure to be believed.
+
+    Returns:
+        One of ``"CONTINUOUS"``, ``"WEAK"``, ``"DISCRETE"``.
+    """
+    if not beats_null:
+        return "CONTINUOUS"
+    return "WEAK" if margin < threshold else "DISCRETE"
+
+
 def null_gate_verdict(tendency, *, threshold=NULL_MARGIN_THRESHOLD):
     """Reduce the per-k table to a single go / no-go read on discrete structure.
 
@@ -186,13 +210,14 @@ def null_gate_verdict(tendency, *, threshold=NULL_MARGIN_THRESHOLD):
     best = scored.loc[scored["headroom_margin"].idxmax()]
     beats_null = bool(scored["exceeds_null"].any())
     margin = float(best["headroom_margin"])
+    label = verdict_label(margin, beats_null=beats_null, threshold=threshold)
 
-    if not beats_null:
+    if label == "CONTINUOUS":
         verdict = (
             "CONTINUOUS: no k beats a single covariance-matched Gaussian null -- no "
             "discrete cluster structure (a real result, not a failure)."
         )
-    elif margin < threshold:
+    elif label == "WEAK":
         verdict = (
             f"WEAK: the best margin over the null is {margin:.3f}, below {threshold} "
             "-- more clusterable than noise, but not by much."

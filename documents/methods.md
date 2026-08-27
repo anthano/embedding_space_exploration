@@ -137,6 +137,15 @@ picked once a sweep has been seen silently selects the answer. Candidate cluster
 are 2–10, the prediction-strength threshold is 0.8, PCA retains 50 components with no
 leading components dropped, the null gate draws 20 covariance-matched datasets and
 compares against their 95th percentile, the partition bootstrap is 25 resamples, and one
-seed drives everything that resamples, fits or permutes. The null-margin threshold
-separating a weak from a believed structure is provisional, and
-{numref}`tbl-tier0-continuum` is the evidence bearing on it.
+seed drives everything that resamples, fits or permutes.
+
+The null-margin threshold separating a weak from a believed structure is the one
+constant set from this tier rather than before it, at 0.10.
+{numref}`tbl-tier0-separation` is the evidence: planted structure too weak to recover
+tops out at a margin of 0.038, structure that is recoverable starts at 0.212, and no
+condition lands between them, so the value is the midpoint of an empty band rather than
+a cut through a distribution. Two limits are recorded with it. It does not separate a
+continuum from weak clusters — {numref}`tbl-tier0-continuum` shows those ranges
+overlapping, so no value could — and it is not comparable across cohort sizes, since at
+fixed planted structure the margin climbs from 0.65 to 0.87 as n goes from 2,000 to
+10,000 while the recoverable structure stays flat.

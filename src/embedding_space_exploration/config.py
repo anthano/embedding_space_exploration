@@ -54,13 +54,30 @@ N_REPEATS: int = 20
 # "standard" are sensitivity arms.
 PRIMARY_SCALING: str = "spherical"
 
-# PROPOSED, and Tier 0 is the evidence that should set it. Minimum share of the
-# headroom above the covariance-matched null (see `battery.cluster_tendency`) for
-# discrete structure to be believed. The verdict is *derived* from the recorded
-# margin, so re-reading a finished run under a different value costs nothing --
-# which is the point: the number can be fixed once the calibration sweep shows
-# what a planted structure scores and what a continuum scores.
-NULL_MARGIN_THRESHOLD: float = 0.25
+# Set 2026-08-27 from the Tier 0 separation sweep (spherical arm, 3 seeds/cell).
+# Minimum share of the headroom above the covariance-matched null (see
+# `battery.cluster_tendency`) for discrete structure to be believed. 0.10 is the
+# midpoint of the empty band the calibration left behind: planted clusters at
+# separation 1.5 -- weak but real, ARI 0.14 -- top out at a margin of 0.038,
+# separation 2.0 (ARI 0.28) starts at 0.212, and nothing lands in between.
+# Separation 0 reads -0.008 to +0.003, so the null end yields no false positives.
+#
+# Two things this threshold is deliberately *not* asked to do.
+#
+# It does not separate a continuum from weak clusters. A continuum at separation
+# 3 scores 0.224-0.336 against genuine blobs at separation 2 at 0.212-0.314; the
+# ranges overlap, so no value of this constant can carry that distinction.
+# Seed-to-seed instability of the gate's arg-max k is the D6 discriminator
+# instead -- blobs return the same k on every seed, a continuum never settles.
+#
+# It is not comparable across n. At fixed planted structure (separation 3, ARI
+# flat at 0.61-0.63) the margin climbs 0.65 -> 0.80 -> 0.87 as n goes
+# 2,000 -> 5,000 -> 10,000, so the subsample arms must have their verdicts read
+# against their own n rather than against this one number.
+#
+# The verdict is *derived* from the recorded margin, so re-reading a finished run
+# under a different value costs nothing. Changing it is a dated ledger entry.
+NULL_MARGIN_THRESHOLD: float = 0.10
 
 # PROPOSED. The single k every space is clustered at when spaces are *compared*.
 # Fixed rather than chosen per space: internal metrics are strongly k-dependent,

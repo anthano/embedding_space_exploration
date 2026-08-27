@@ -17,9 +17,12 @@ above that the margin tracks how much structure is actually recoverable almost
 one-for-one — 0.65 against ARI 0.61, 0.86 against 0.85, 0.98 against 0.99. A margin is
 therefore readable as an effect size and not only as a test statistic.
 
-Separation 2.0 is the boundary, and the seeds disagree there: two return DISCRETE at
-margins 0.284 and 0.314, one returns WEAK at 0.212, straddling the provisional
-threshold. The boundary is real but not sharp at this cohort size.
+Separation 2.0 is where detection begins, and the seeds spread widely there — margins of
+0.212, 0.284 and 0.314 against an ARI of only 0.282. All three clear the threshold, but
+the factor-of-1.5 spread across nothing but the seed is the honest width of the boundary
+at this cohort size, and it is what sets the threshold: the band between 0.038 at
+separation 1.5 and 0.212 here is empty, so 0.10 separates the two without sitting on top
+of either.
 
 Two checks come off badly. **Silhouette does not discriminate at all** in the regime
 where detection is decided: it reads 0.049 on pure noise and 0.058 where structure is
@@ -34,9 +37,9 @@ that prediction-strength thresholding misses.
 ```
 
 This is the failure the design most needed to check for. Points spread uniformly along a
-filament — no partition to find — are called DISCRETE from separation 3 upward,
-unanimously across seeds at separation 6 with margins of 0.77 to 0.79. A sliced
-continuum passes cluster tendency, prediction strength and the null gate together.
+filament — no partition to find — are called DISCRETE unanimously from separation 3
+upward, at margins of 0.27 and then 0.78. A sliced continuum passes cluster tendency,
+prediction strength and the null gate together.
 
 The margins make the problem precise rather than solving it. Genuine blobs at separation
 2 score 0.212–0.314 across seeds; a continuum at separation 3 scores 0.224–0.336. **The

@@ -6,6 +6,7 @@ from embedding_space_exploration.battery.cluster_tendency import (
     cluster_tendency_vs_null,
     null_gate_verdict,
     null_margin,
+    verdict_label,
 )
 
 # Small, fast sweep settings for the tests (the defaults are a heavy one-time gate).
@@ -103,3 +104,39 @@ def test_beating_the_null_by_a_hair_is_weak_not_discrete():
     verdict = null_gate_verdict(tendency, threshold=0.25).iloc[0]
     assert verdict["any_k_beats_null"]
     assert verdict["verdict"].startswith("WEAK")
+
+
+def test_the_label_is_a_function_of_the_recorded_margin_alone():
+    # The point of splitting this out: a finished run records the margin, so the
+    # label can be recomputed later under a revised threshold. Same margin, two
+    # thresholds, two labels -- no re-run.
+    assert verdict_label(0.212, beats_null=True, threshold=0.10) == "DISCRETE"
+    assert verdict_label(0.212, beats_null=True, threshold=0.25) == "WEAK"
+
+
+def test_failing_the_null_outranks_the_margin():
+    # A large margin means nothing if no k cleared the null band at all.
+    assert verdict_label(0.9, beats_null=False, threshold=0.10) == "CONTINUOUS"
+
+
+def test_the_sentence_and_the_label_cannot_disagree():
+    # `null_gate_verdict` builds its prose from `verdict_label`, so the two can
+    # never drift apart -- which is what lets the tables derive one from the
+    # margin while the harness stores the other.
+    tendency = pd.DataFrame(
+        {
+            "k": [4, 10],
+            "prediction_strength": [0.7691, 0.1701],
+            "null_ps_median": [0.3887, 0.1531],
+            "null_ps_p95": [0.4721, 0.1592],
+            "exceeds_null": [True, True],
+        }
+    )
+    for threshold in (0.10, 0.25, 0.90):
+        verdict = null_gate_verdict(tendency, threshold=threshold).iloc[0]
+        label = verdict_label(
+            verdict["max_headroom_margin"],
+            beats_null=verdict["any_k_beats_null"],
+            threshold=threshold,
+        )
+        assert verdict["verdict"].startswith(label)

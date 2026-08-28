@@ -75,6 +75,15 @@ TRUNCATION_SIDE = "left"
 # long-context cell where memory binds instead.
 BATCH_SIZE = 8
 
+# What `truncation_report` produces, named once so the journal can select them
+# back out without reconstructing an empty frame to ask.
+TRUNCATION_COLUMNS = (
+    "n_tokens_untruncated",
+    "n_tokens_seen",
+    "truncated",
+    "covered",
+)
+
 
 def resolve_device(preference=None):
     """The device to run on: an explicit choice, else the best one present.
@@ -177,8 +186,7 @@ def truncation_report(untruncated, context):
         context: The cell's trained context window.
 
     Returns:
-        DataFrame with ``n_tokens_untruncated``, ``n_tokens_seen``,
-        ``truncated`` and ``covered``.
+        DataFrame with the ``TRUNCATION_COLUMNS``.
     """
     lengths = np.asarray(untruncated, dtype=int)
     seen = np.minimum(lengths, context)
@@ -355,27 +363,19 @@ def extract(
         the provenance frame carries the same keys plus ``truncation_report``'s
         columns.
     """
+    index = ordered_index(index)
     tokenizer, backbone, device = load_extractor(cell, device)
-    events_by_patient = _events_by_patient(database, index)
 
     vectors = {name: [] for name in poolings}
     untruncated = []
-    for start in range(0, len(index), batch_size):
-        rows = index.iloc[start : start + batch_size]
-        batch = [
-            to_model_events(
-                events_until(events_by_patient[row.person_id], _cutoff(row.cutoff))
-            )
-            for row in rows.itertuples()
-        ]
-        pooled, lengths = embed_batch(
-            tokenizer, backbone, batch, cell.context, poolings, device
-        )
+    for rows, pooled, lengths in iter_batches(
+        database, index, cell, poolings, tokenizer, backbone, device, batch_size
+    ):
         for name in poolings:
             vectors[name].append(pooled[name])
         untruncated.extend(lengths)
         if progress is not None:
-            progress(min(start + batch_size, len(index)))
+            progress(min(rows.index[-1] + 1, len(index)))
 
     keys = index[["person_id", "cutoff"]].reset_index(drop=True)
     matrices = {
@@ -384,6 +384,79 @@ def extract(
     }
     provenance = pd.concat([keys, truncation_report(untruncated, cell.context)], axis=1)
     return matrices, provenance
+
+
+def ordered_index(index):
+    """The one anchor order every run uses, fresh or resumed.
+
+    Sorted by patient, then by cutoff. Two things depend on it.
+
+    **Resume correctness.** A resumed run skips the first ``k`` rows and picks up
+    at row ``k``; that only lands on the same anchors as a fresh run if the order
+    is a function of the index rather than of how it happened to be built.
+
+    **Reading each patient once.** Sorting by ``person_id`` makes one patient's
+    anchors contiguous, which is what lets ``_PatientEventCache`` hold exactly
+    one patient and still never re-read. It matters most where the cost is worst:
+    at the ``perlabel`` anchor 6,275 patients carry 381,522 anchors, so the lab
+    tasks label the same patient hundreds of times.
+
+    Args:
+        index: DataFrame with ``person_id`` and ``cutoff`` columns.
+
+    Returns:
+        The same rows, sorted, with a fresh ``RangeIndex``.
+    """
+    return index.sort_values(
+        ["person_id", "cutoff"], kind="stable", na_position="first"
+    ).reset_index(drop=True)
+
+
+def iter_batches(
+    database,
+    index,
+    cell,
+    poolings,
+    tokenizer,
+    backbone,
+    device,
+    batch_size=BATCH_SIZE,
+    start_row=0,
+):
+    """Yield ``(rows, {pooling: [B, d] array}, untruncated)`` per forward pass.
+
+    The single place batches are formed, so the in-memory path and the
+    incremental path cannot drift into batching differently -- which would make
+    their numbers differ in the last bits for no reason a reader could see.
+
+    Args:
+        database: An open ``meds_reader`` database.
+        index: An already-``ordered_index`` frame.
+        cell: The ``registry.Cell`` being run.
+        poolings: Readout names to compute.
+        tokenizer: A loaded ``CLMBRTokenizer``.
+        backbone: The loaded backbone, on ``device``.
+        device: Where the forward pass runs.
+        batch_size: Rows per forward pass.
+        start_row: Row to resume from. Must be a multiple of ``batch_size`` for a
+            resumed run to batch identically to a fresh one.
+
+    Yields:
+        Tuple of ``(rows, pooled, untruncated)`` for each batch.
+    """
+    events = _PatientEventCache(database)
+    for start in range(start_row, len(index), batch_size):
+        rows = index.iloc[start : start + batch_size]
+        batch = [
+            to_model_events(
+                events_until(events.get(row.person_id), _cutoff(row.cutoff))
+            )
+            for row in rows.itertuples()
+        ]
+        pooled, lengths = embed_batch(
+            tokenizer, backbone, batch, cell.context, poolings, device
+        )
+        yield rows, pooled, lengths
 
 
 def extraction_record(cell, index, provenance, seconds, device=None):
@@ -434,16 +507,266 @@ def timed(function, *args, **kwargs):
     return result, time.perf_counter() - started
 
 
-def _events_by_patient(database, index):
-    """Read each patient's events once, however many anchors they carry.
+# ======================================================================================
+# Incremental writing and resume
+# ======================================================================================
+# A cell at the perlabel anchor is a job measured in tens of hours. Writing only
+# at the end means a job killed at hour 55 of 60 leaves nothing, so results are
+# flushed to a journal as they are produced and a restart continues from where
+# the journal ends.
+#
+# This is deliberately *not* the chunked design. There is one process, one file
+# per cell at the end, and no merge step anybody has to get right -- the journal
+# is an implementation detail that is consumed and deleted on completion.
+#
+# A resumed run is bitwise identical to a fresh one, which is the property that
+# makes this safe to use by default. Blocks are whole numbers of batches, so a
+# resume point is always a batch boundary, so every batch after it contains the
+# same anchors it would have in a clean run. Nothing about the arithmetic
+# depends on where the job died.
 
-    The lab tasks label the same patient at hundreds of prediction times, so
-    re-reading per anchor would dominate the ``perlabel`` run.
+JOURNAL_DIR = "_journal"
+
+# Batches per flush. At the default batch size this is 200 anchors, ~1.2 MB of
+# float32 across two poolings -- small enough that losing one costs seconds of
+# recomputation, large enough that the run is not dominated by file creation.
+FLUSH_EVERY = 25
+
+
+def journal_dir(out_dir):
+    """Where a cell's in-progress blocks live."""
+    from pathlib import Path
+
+    return Path(out_dir) / JOURNAL_DIR
+
+
+def read_journal(out_dir):
+    """Every complete block written so far, in order.
+
+    Blocks are written to a temporary name and renamed into place, so a torn
+    block should not exist; it is still handled, because "should not" is not a
+    guarantee when a scheduler sends SIGKILL. The first unreadable block and
+    everything after it is discarded -- those anchors are simply recomputed.
+
+    Args:
+        out_dir: The cell's output directory.
+
+    Returns:
+        A ``pyarrow.Table``, or ``None`` when nothing has been written.
     """
-    return {
-        person_id: patient_events(database, person_id)
-        for person_id in index["person_id"].unique()
-    }
+    import pyarrow as pa
+
+    directory = journal_dir(out_dir)
+    if not directory.exists():
+        return None
+    blocks = []
+    paths = sorted(directory.glob("*.arrow"))
+    for position, path in enumerate(paths):
+        try:
+            with pa.ipc.open_file(path) as reader:
+                blocks.append(reader.read_all())
+        except (pa.ArrowInvalid, OSError):
+            for stale in paths[position:]:
+                stale.unlink(missing_ok=True)
+            break
+    return pa.concat_tables(blocks) if blocks else None
+
+
+def write_block(out_dir, table):
+    """Append one block to the journal, atomically.
+
+    Written under a temporary name and renamed, because a reader that finds a
+    half-written block cannot tell it from a complete one.
+
+    Args:
+        out_dir: The cell's output directory.
+        table: The ``pyarrow.Table`` to append.
+    """
+    import pyarrow as pa
+
+    directory = journal_dir(out_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    index = len(list(directory.glob("*.arrow")))
+    final = directory / f"{index:06d}.arrow"
+    staged = final.with_suffix(".arrow.tmp")
+    with pa.ipc.new_file(staged, table.schema) as writer:
+        writer.write_table(table)
+    staged.rename(final)
+
+
+def _block_table(rows, pooled, untruncated, context):
+    """One block: the keys, every pooling's vectors, and the truncation columns.
+
+    Held in one table rather than one per pooling so that a block is either
+    present for all of them or absent for all of them. Two journals could be
+    resumed at two different points, and the matrices would then disagree about
+    which anchor each row is.
+    """
+    import pyarrow as pa
+
+    frame = rows[["person_id", "cutoff"]].reset_index(drop=True)
+    frame = pd.concat(
+        [frame, truncation_report(untruncated, context)],
+        axis=1,
+    )
+    for name, matrix in pooled.items():
+        block = _as_frame(matrix)
+        block.columns = [f"{name}__{column}" for column in block.columns]
+        frame = pd.concat([frame, block], axis=1)
+    return pa.Table.from_pandas(frame, preserve_index=False)
+
+
+def _split_journal(table, poolings):
+    """Journal table back into ``({pooling: matrix frame}, provenance frame)``."""
+    frame = table.to_pandas()
+    keys = frame[["person_id", "cutoff"]]
+    matrices = {}
+    for name in poolings:
+        prefix = f"{name}__"
+        columns = [column for column in frame.columns if column.startswith(prefix)]
+        block = frame[columns].rename(
+            columns={column: column[len(prefix) :] for column in columns}
+        )
+        matrices[name] = pd.concat([keys, block], axis=1)
+    provenance = pd.concat([keys, frame[list(TRUNCATION_COLUMNS)]], axis=1)
+    return matrices, provenance
+
+
+def extract_resumable(
+    database,
+    index,
+    cell,
+    targets,
+    batch_size=BATCH_SIZE,
+    flush_every=FLUSH_EVERY,
+    device=None,
+    progress=None,
+):
+    """Embed every anchor, flushing as it goes and resuming where it left off.
+
+    The entry point a cluster job calls. One process, one pass, one
+    ``embeddings.parquet`` per pooling at the end.
+
+    Args:
+        database: An open ``meds_reader`` database.
+        index: DataFrame with ``person_id`` and ``cutoff`` columns.
+        cell: Any ``registry.Cell`` of the extraction group -- the poolings come
+            from ``targets``, and every cell in a group shares the forward pass.
+        targets: ``{pooling: output directory}``. One directory per cell id, so
+            each is self-contained for everything downstream.
+        batch_size: Rows per forward pass.
+        flush_every: Batches per journal block.
+        device: Device string, or ``None`` to auto-detect.
+        progress: Optional callable invoked with the number of rows completed.
+
+    Returns:
+        The ``extraction_record`` dict for the run.
+    """
+    import json
+
+    started = time.perf_counter()
+    index = ordered_index(index)
+    poolings = tuple(targets)
+    work_dir = next(iter(targets.values()))
+    for directory in targets.values():
+        directory.mkdir(parents=True, exist_ok=True)
+
+    existing = read_journal(work_dir)
+    done = 0 if existing is None else existing.num_rows
+    if done % batch_size and done < len(index):
+        # Only whole blocks are ever written, so this means the journal was
+        # produced with a different batch size. Continuing would batch the
+        # remaining anchors differently from a clean run, which is exactly the
+        # reproducibility claim this design makes; start the cell over instead.
+        raise ValueError(
+            f"journal in {work_dir} holds {done} rows, not a multiple of "
+            f"batch_size={batch_size}; delete {journal_dir(work_dir)} and re-run"
+        )
+    if done >= len(index):
+        done = len(index)
+
+    tokenizer, backbone, device = load_extractor(cell, device)
+    pending = []
+    for rows, pooled, lengths in iter_batches(
+        database,
+        index,
+        cell,
+        poolings,
+        tokenizer,
+        backbone,
+        device,
+        batch_size,
+        start_row=done,
+    ):
+        pending.append(_block_table(rows, pooled, lengths, cell.context))
+        if len(pending) >= flush_every:
+            import pyarrow as pa
+
+            write_block(work_dir, pa.concat_tables(pending))
+            pending = []
+        if progress is not None:
+            progress(min(rows.index[-1] + 1, len(index)))
+    if pending:
+        import pyarrow as pa
+
+        write_block(work_dir, pa.concat_tables(pending))
+
+    table = read_journal(work_dir)
+    if table is None or table.num_rows != len(index):
+        got = 0 if table is None else table.num_rows
+        raise RuntimeError(
+            f"journal holds {got} rows for an index of {len(index)}; refusing to "
+            "write a partial matrix"
+        )
+    matrices, provenance = _split_journal(table, poolings)
+    for name, directory in targets.items():
+        matrices[name].to_parquet(directory / "embeddings.parquet", index=False)
+        provenance.to_parquet(directory / "truncation.parquet", index=False)
+
+    record = extraction_record(
+        cell, index, provenance, time.perf_counter() - started, device
+    )
+    record["resumed_from_row"] = int(done)
+    record["batch_size"] = int(batch_size)
+    for directory in targets.values():
+        # The layout is `cells/{cell_id}/`, so the directory names the cell this
+        # matrix belongs to -- which is not the representative cell the group was
+        # run under, and writing that one into every pooling's provenance would
+        # label the mean-pool matrix with the last-token cell's id.
+        payload = {**record, "cell_id": directory.name}
+        (directory / "extraction.json").write_text(json.dumps(payload, indent=2))
+
+    for path in journal_dir(work_dir).glob("*.arrow"):
+        path.unlink()
+    journal_dir(work_dir).rmdir()
+    return record
+
+
+class _PatientEventCache:
+    """One patient's events, held until the next patient is asked for.
+
+    Replaces a dict of every patient in the index. That dict read each patient
+    once, which was the point, but it also held all of them at once: 6,275
+    patients at a median 3,129 events is ~20M tuples, several GB of Python
+    objects, reached before the first forward pass. Fine on a 495 GB node and
+    not fine on a laptop, and the resumable path has to run in both.
+
+    A single-entry cache is enough precisely because ``ordered_index`` sorts by
+    ``person_id``, so a patient's anchors arrive together and each patient is
+    still read exactly once. Bounded memory and the same number of reads.
+    """
+
+    def __init__(self, database):
+        self._database = database
+        self._person_id = None
+        self._rows = None
+
+    def get(self, person_id):
+        """The patient's events, reading them only on a change of patient."""
+        if person_id != self._person_id:
+            self._person_id = person_id
+            self._rows = patient_events(self._database, person_id)
+        return self._rows
 
 
 def _as_frame(matrix):

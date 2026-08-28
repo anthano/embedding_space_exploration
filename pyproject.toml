@@ -114,7 +114,8 @@ transformers = "==4.48.2"
 # per-package no-deps (prefix-dev/pixi#1417), so this one-off task is the supported
 # workaround. Run once after `pixi install`.
 install-hf-ehr = { cmd = "pip install --no-deps git+https://github.com/som-shahlab/hf_ehr.git@20847e0f13c4e9097a60461109d5fe1c9314debc", description = "Install hf_ehr (CLMBRTokenizer) without its training-only deps" }
-tests = { cmd = "pytest", description = "Run tests" }
+tests = { cmd = "pytest -m 'not integration'", description = "Run the fast tests (excludes `integration`, which loads models)" }
+tests-integration = { cmd = "pytest -m integration", description = "Run the integration tests: needs the EHRSHOT extract and downloads gated model weights" }
 tests-with-cov = { cmd = "pytest --cov-report=xml --cov=./", description = "Run tests with coverage" }
 view-paper = { cmd = "jupyter book start", description = "View the HTML paper in browser" }
 [tool.pixi.workspace]

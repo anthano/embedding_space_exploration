@@ -155,11 +155,18 @@ forward pass reads the `meds_reader` database, `benchmark/` and `splits/`, and n
 **4. Build the environment** (on the login node):
 
 ```bash
-cd $REPO/hpc/spartan
+export CONDA_OVERRIDE_CUDA=12   # put this in ~/.bashrc too
+cd $PROJECT/embedding_space_exploration/hpc/spartan
 pixi install                # solves the CUDA build of pytorch; writes pixi.lock here
 pixi run install-hf-ehr     # CLMBRTokenizer, without its training-only deps
-pixi run check-gpu          # only meaningful in an interactive GPU session
 ```
+
+**`CONDA_OVERRIDE_CUDA=12` is required on a login node and is not a workaround.** The
+manifest's platform is `linux-64-cuda-12`, so pixi wants the `__cuda` virtual package —
+and a login node has no GPU, so it fails with `missing virtual packages: __cuda >= 12`.
+Login nodes are precisely where the environment gets built, so the override asserts the
+driver the *compute* nodes have. Every `pixi` command you run outside a job needs it in
+scope, which is why it belongs in `~/.bashrc` rather than on one line.
 
 This is a **separate pixi manifest**, not a `gpu` feature in the root `pyproject.toml`.
 The root workspace installs itself as an editable PyPI dependency, so resolving PyPI for

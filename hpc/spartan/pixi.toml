@@ -20,6 +20,7 @@
 #
 # Set up once, on a *login* node (compute nodes have no outbound internet):
 #
+#     export CONDA_OVERRIDE_CUDA=12    # login nodes have no GPU; see `platforms`
 #     cd $REPO/hpc/spartan
 #     pixi install
 #     pixi run install-hf-ehr
@@ -32,14 +33,20 @@
 authors = ["anojat"]
 channels = ["conda-forge"]
 name = "embedding-space-exploration-gpu"
-platforms = ["linux-64"]
+# The `cuda = "12"` is the driver major version the *compute* node must report.
+# conda-forge's `cuda129` builds ship their own runtime and need only a 12.x
+# driver, so this is a floor, not a match. Declared inline on the platform rather
+# than in a `[system-requirements]` table, which pixi deprecated in favour of
+# this form.
+#
+# Consequence worth knowing: this makes the platform `linux-64-cuda-12`, which a
+# *login* node cannot satisfy -- it has no GPU, so `__cuda` is absent and every
+# `pixi install` / `pixi run` there fails with "missing virtual packages:
+# __cuda >= 12". Login nodes are exactly where the environment gets built, so
+# export `CONDA_OVERRIDE_CUDA=12` in your shell; it asserts the driver the
+# compute nodes have. Harmless on a compute node, where the real one is found.
+platforms = [{ name = "linux-64-cuda-12", platform = "linux-64", cuda = "12" }]
 version = "0.1.0"
-
-[system-requirements]
-# The driver major version the compute node must report. conda-forge's `cuda129`
-# builds ship their own runtime and need only a 12.x driver, so this is a floor,
-# not a match. Check with `nvidia-smi` on the node if a job fails to see the GPU.
-cuda = "12"
 
 [dependencies]
 # Pinned to the root manifest's version: `meds-reader` has no cp314 wheel and the

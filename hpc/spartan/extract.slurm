@@ -108,6 +108,11 @@ export HF_HOME="${HF_HOME:-$PROJECT/hf_cache}"
 # populated.
 export HF_HUB_OFFLINE=1
 export TOKENIZERS_PARALLELISM=false
+# The manifest's platform requires `__cuda >= 12`, which pixi detects from the
+# driver. Asserting it here costs nothing on a node that has one and avoids a
+# confusing pixi-level failure on one where detection is flaky -- torch remains
+# the real check, since `--device cuda` below raises immediately without a GPU.
+export CONDA_OVERRIDE_CUDA=12
 # Match the CPU allocation. Left unset, torch spawns one thread per core on the
 # whole node and the threads contend rather than help.
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-4}"

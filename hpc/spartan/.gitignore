@@ -1,0 +1,6 @@
+# Slurm writes here; the job logs are run artifacts, not source.
+logs/
+# pixi's installed environment. `pixi.lock` is NOT ignored -- it is generated on
+# Spartan (the only platform that can resolve it) and committing it back is what
+# makes a re-run months later the same environment.
+.pixi/

@@ -1,0 +1,77 @@
+# The GPU environment for Tier 1.2 extraction on Spartan (University of Melbourne).
+#
+# A separate manifest, not a `gpu` feature in the root `pyproject.toml`, and the
+# reason is mechanical rather than stylistic. A CUDA feature there is solvable on
+# conda-forge but *not lockable from the laptop*: the workspace installs itself as
+# an editable PyPI dependency, so resolving PyPI for `linux-64` needs a build
+# dispatch that only runs on `linux-64`. pixi then refuses every `pixi run` in the
+# repo until the lock covers all environments -- verified 2026-08-28, `pixi lock`
+# fails with "the environment 'gpu' does not support 'osx-arm64' on this machine"
+# and the laptop's own tasks stop working. This manifest is solved on Spartan,
+# where that is not a cross-platform question at all.
+#
+# It is also deliberately the *extraction subset*, not a mirror of the root
+# dependencies: no jupyter-book, node, plotly, kaleido, pygraphviz, statsmodels,
+# scikit-learn or scipy. None is imported by the forward-pass path (checked
+# against `hf_ehr.config` and `hf_ehr.data.tokenization`, which need only torch,
+# transformers, omegaconf, loguru and tqdm), and every one of them is another way
+# for an install on a login node to fail at 2am. The battery that does need
+# scikit-learn runs on the laptop, off the matrices this produces.
+#
+# Set up once, on a *login* node (compute nodes have no outbound internet):
+#
+#     cd $REPO/hpc/spartan
+#     pixi install
+#     pixi run install-hf-ehr
+#     pixi run prefetch          # cache the 8 checkpoints before any job starts
+#
+# `pixi.lock` beside this file is generated there and is worth committing: it is
+# what makes a re-run months later the same environment.
+
+[workspace]
+authors = ["anojat"]
+channels = ["conda-forge"]
+name = "embedding-space-exploration-gpu"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[system-requirements]
+# The driver major version the compute node must report. conda-forge's `cuda129`
+# builds ship their own runtime and need only a 12.x driver, so this is a floor,
+# not a match. Check with `nvidia-smi` on the node if a job fails to see the GPU.
+cuda = "12"
+
+[dependencies]
+# Pinned to the root manifest's version: `meds-reader` has no cp314 wheel and the
+# Bazel sdist does not build, so 3.13 is the ceiling here for the same reason.
+python = "3.13.*"
+numpy = ">=2.4"
+pandas = ">=2.2"
+pyarrow = "*"
+pip = "*"
+# The whole point of this file. conda-forge ships no `cuda128` build for py313
+# (only cuda129/cuda130), so 12.9 is the floor available rather than a preference
+# -- see the Build Plan Tier -1 note. If Spartan's driver caps below 12.9,
+# relax to `cuda-version = "12.*"` and let the solver take cuda129 anyway; the
+# bundled runtime is what matters, and minor-version compatibility covers it.
+cuda-version = "12.9.*"
+pytorch = { version = "*", build = "cuda*" }
+
+[pypi-dependencies]
+# Editable from the repo root, so a job runs the working tree rather than a copy
+# that silently ages. Two levels up from `hpc/spartan/`.
+embedding_space_exploration = { path = "../..", editable = true }
+# Pinned to 4.48.2 for the reason the root manifest gives: newer 4.5x/5.x break
+# this model at runtime (malformed `token_type_ids`, the SDPA masking refactor).
+transformers = "==4.48.2"
+meds-reader = "*"
+omegaconf = "*"
+loguru = "*"
+tqdm = "*"
+huggingface_hub = "*"
+
+[tasks]
+install-hf-ehr = { cmd = "pip install --no-deps git+https://github.com/som-shahlab/hf_ehr.git@20847e0f13c4e9097a60461109d5fe1c9314debc", description = "Install hf_ehr (CLMBRTokenizer) without its training-only deps" }
+timeline = { cmd = "python build_timeline.py", description = "Build the patient timeline summary the lastevent anchor needs (bld/ is gitignored, so it does not arrive with the repo)" }
+prefetch = { cmd = "python prefetch_models.py", description = "Download every checkpoint into HF_HOME so compute nodes never need the network" }
+check-gpu = { cmd = "python -c \"import torch; print('cuda', torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')\"", description = "Confirm the CUDA build sees the node's GPU" }

@@ -16,7 +16,7 @@
 # that ever becomes convenient.
 #
 # Usage:
-#   ./stage_data.sh <user>@spartan.hpc.unimelb.edu.au:/data/scratch/projects/punimXXXX/ehrshot
+#   ./stage_data.sh <user>@spartan.hpc.unimelb.edu.au:/data/gpfs/projects/punim1993/students/Anoja/ehrshot
 set -euo pipefail
 
 LOCAL_ROOT="${EHRSHOT_ROOT:-$HOME/Documents/Datasets/EHRSHOT_files}"

@@ -122,8 +122,7 @@ cell, ×16), they land in `$REPO/bld/`, and home directories on Spartan are smal
 quota'd. pixi's own package cache is worth moving off home for the same reason:
 
 ```bash
-# confirm your project's path first -- `ls -d /data/*/projects/punim1993`
-export PROJECT=/data/gpfs/projects/punim1993
+export PROJECT=/data/gpfs/projects/punim1993/students/Anoja
 export PIXI_CACHE_DIR=$PROJECT/.pixi_cache
 
 cd $PROJECT
@@ -132,23 +131,25 @@ cd embedding_space_exploration
 git checkout tier0-calibration-harness
 ```
 
-`extract.slurm` defaults `ESX_REPO` to `$HOME/embedding_space_exploration`, so if you
-clone elsewhere — and you should — export the real path before submitting:
+`extract.slurm` derives everything from that one directory —
+`$PROJECT/embedding_space_exploration`, `$PROJECT/ehrshot`, `$PROJECT/hf_cache` — so if
+your layout matches the above, no path exports are needed at submit time. If it does
+not, override the base rather than each path:
 
 ```bash
-export ESX_REPO=$PROJECT/embedding_space_exploration
+export ESX_PROJECT=/somewhere/else
 ```
 
-Put `PROJECT`, `PIXI_CACHE_DIR`, `ESX_REPO`, `EHRSHOT_ROOT` and `HF_HOME` in your
-`~/.bashrc` once. Every step below and the job itself read them, and a login node that
-has forgotten one is how a submitted array dies three minutes in.
+Put `PROJECT` and `PIXI_CACHE_DIR` in your `~/.bashrc` once; the login-node steps below
+read them. The job validates all three directories before loading a model and exits with
+`missing: <path>` rather than failing later and less legibly.
 
 **3. Stage the data** (from the laptop). ~280 MB, not the 17 GB the extract weighs: the
 forward pass reads the `meds_reader` database, `benchmark/` and `splits/`, and none of
 `features/`, `femr/`, `data/` or `models/`.
 
 ```bash
-./hpc/spartan/stage_data.sh you@spartan.hpc.unimelb.edu.au:/data/scratch/projects/punim1993/ehrshot
+./hpc/spartan/stage_data.sh you@spartan.hpc.unimelb.edu.au:/data/gpfs/projects/punim1993/students/Anoja/ehrshot
 ```
 
 **4. Build the environment** (on the login node):
@@ -175,9 +176,12 @@ re-run months later the same environment.
 **5. Prefetch weights and build the timeline** (login node):
 
 ```bash
-# from step 2, if not already in ~/.bashrc
 export HF_HOME=$PROJECT/hf_cache
 export EHRSHOT_ROOT=$PROJECT/ehrshot
+
+# The layout `stage_data.sh` produces; check it before anything reads it.
+ls $EHRSHOT_ROOT            # -> meds_reader_omop_ehrshot  EHRSHOT_ASSETS
+ls $EHRSHOT_ROOT/EHRSHOT_ASSETS   # -> benchmark  splits  results
 
 pixi run prefetch    # the 8 checkpoints; jobs run with HF_HUB_OFFLINE=1
 pixi run timeline    # bld/ is gitignored, so this does not arrive with the repo

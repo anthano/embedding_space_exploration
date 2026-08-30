@@ -90,11 +90,17 @@ set -euo pipefail
 # ----------------------------------------------------------------------------
 # Paths -- override by exporting before sbatch, or edit here
 # ----------------------------------------------------------------------------
-REPO="${ESX_REPO:-$HOME/embedding_space_exploration}"
-export EHRSHOT_ROOT="${EHRSHOT_ROOT:-/data/scratch/projects/${SLURM_JOB_ACCOUNT:-punim1993}/ehrshot}"
-# Model cache on scratch, never in $HOME: home is small, quota'd, and slow to
-# read from a compute node. Must be the same HF_HOME `pixi run prefetch` used.
-export HF_HOME="${HF_HOME:-/data/scratch/projects/${SLURM_JOB_ACCOUNT:-punim1993}/hf_cache}"
+# Everything hangs off one project directory, so relocating the work is one
+# export rather than four. Project storage, never $HOME: this run writes ~1 GB
+# of matrices under $REPO/bld, and home directories on Spartan are quota'd.
+PROJECT="${ESX_PROJECT:-/data/gpfs/projects/punim1993/students/Anoja}"
+REPO="${ESX_REPO:-$PROJECT/embedding_space_exploration}"
+# Must contain `meds_reader_omop_ehrshot/` and `EHRSHOT_ASSETS/` -- that is the
+# shape `stage_data.sh` produces and what `config.EHRSHOT_ROOT` expects.
+export EHRSHOT_ROOT="${EHRSHOT_ROOT:-$PROJECT/ehrshot}"
+# Must be the same HF_HOME `pixi run prefetch` populated, or every element dies
+# on a cache miss it cannot resolve offline.
+export HF_HOME="${HF_HOME:-$PROJECT/hf_cache}"
 
 # Cache misses become an immediate error rather than a stalled connection that
 # can never succeed -- compute nodes have no outbound network. If an element
@@ -114,6 +120,17 @@ ANCHOR="${ANCHORS[$((TASK_ID / N_KEYS))]}"
 KEY_INDEX=$((TASK_ID % N_KEYS))
 
 cd "$REPO/hpc/spartan"
+
+# Fail here, loudly, rather than 30s into a model load: a wrong EHRSHOT_ROOT is
+# the single most likely misconfiguration and its natural error arrives much
+# later and much less legibly.
+for required in "$REPO/hpc/spartan" "$EHRSHOT_ROOT/meds_reader_omop_ehrshot" "$HF_HOME"; do
+  if [[ ! -d "$required" ]]; then
+    echo "missing: $required" >&2
+    echo "check ESX_PROJECT / ESX_REPO / EHRSHOT_ROOT / HF_HOME" >&2
+    exit 2
+  fi
+done
 
 echo "host        $(hostname)"
 echo "array task  ${TASK_ID}  ->  anchor=${ANCHOR}  key-index=${KEY_INDEX}"

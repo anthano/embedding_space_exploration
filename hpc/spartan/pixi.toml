@@ -63,6 +63,12 @@ pip = "*"
 # bundled runtime is what matters, and minor-version compatibility covers it.
 cuda-version = "12.9.*"
 pytorch = { version = "*", build = "cuda*" }
+# `cuda.h`, which lands in `$CONDA_PREFIX/targets/x86_64-linux/include` -- exactly
+# the directory Triton already passes to gcc when it builds its driver shim on
+# first kernel launch. The `cuda-cudart` runtime that pytorch pulls in ships the
+# library and not the header, so without this every Triton-backed op fails to
+# compile on the compute node. Costs a few MB and no solver grief.
+cuda-cudart-dev = "*"
 
 [pypi-dependencies]
 # Editable from the repo root, so a job runs the working tree rather than a copy

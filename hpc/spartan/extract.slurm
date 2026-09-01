@@ -116,6 +116,16 @@ export CONDA_OVERRIDE_CUDA=12
 # Match the CPU allocation. Left unset, torch spawns one thread per core on the
 # whole node and the threads contend rather than help.
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-4}"
+# Route the rotary embedding's batched matmul through ATen rather than torch's
+# Triton-backed native op. Triton JIT-compiles a CUDA driver shim on first use
+# and the compile needs `cuda.h`, which the environment's `cuda-cudart` runtime
+# package does not ship; without it every Llama element died in 8-14 seconds on
+# its first forward pass while every GPT element ran clean, because only Llama
+# has rotary embeddings. `cuda-cudart-dev` in `pixi.toml` is the durable fix --
+# this is belt-and-braces, and it also keeps the kernel a stock ATen one, which
+# is what `extraction_record`'s device note assumes when it claims a re-run on
+# different hardware differs only in the last decimals.
+export TORCH_DISABLE_NATIVE_JIT=1
 
 ANCHORS=(lastevent perlabel-scout)
 N_KEYS=8

@@ -641,6 +641,7 @@ def extract_resumable(
     flush_every=FLUSH_EVERY,
     device=None,
     progress=None,
+    provenance_extra=None,
 ):
     """Embed every anchor, flushing as it goes and resuming where it left off.
 
@@ -658,6 +659,10 @@ def extract_resumable(
         flush_every: Batches per journal block.
         device: Device string, or ``None`` to auto-detect.
         progress: Optional callable invoked with the number of rows completed.
+        provenance_extra: Optional fields merged into ``extraction.json``. For
+            facts the caller knows and this function cannot see -- the anchor
+            filter's drop count is one, and it belongs beside the matrix rather
+            than only in a Slurm log that ages out.
 
     Returns:
         The ``extraction_record`` dict for the run.
@@ -728,6 +733,7 @@ def extract_resumable(
     )
     record["resumed_from_row"] = int(done)
     record["batch_size"] = int(batch_size)
+    record.update(provenance_extra or {})
     for directory in targets.values():
         # The layout is `cells/{cell_id}/`, so the directory names the cell this
         # matrix belongs to -- which is not the representative cell the group was

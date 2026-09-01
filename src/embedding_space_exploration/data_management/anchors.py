@@ -130,6 +130,40 @@ def lastevent_index(timeline):
     )
 
 
+def restrict_to_known(index, timeline):
+    """Drop anchors whose patient is absent from the extract.
+
+    The label files and the MEDS extract are two separate EHRSHOT downloads and
+    they do not have to agree. Measured on the staged extract: the scout's nine
+    tasks name 3,903 patients, five of which the database does not carry, and
+    those five contribute 10 of 14,204 anchors. Unfiltered, the tenth of a
+    percent is not a tenth of a percent of the result -- ``meds_reader`` raises
+    ``KeyError`` on the first one, which killed four cells at 14,000 of 14,204
+    rows with the matrices unwritten.
+
+    Filtered here rather than caught at the read, because an anchor set that
+    silently skips rows is an anchor set whose length no longer matches the
+    matrix it produced, and ``extract_resumable`` checks exactly that.
+
+    Pure pandas against the timeline summary, which ``task_timeline`` builds from
+    ``summarise_cohort(open_database())`` over every subject present -- so it is
+    the extract's patient list, and this module still needs no ``meds_reader``.
+
+    Args:
+        index: Frame with ``person_id`` and ``cutoff``.
+        timeline: The ``patient_timeline.parquet`` frame, or a path to it.
+
+    Returns:
+        Tuple of ``(index, dropped)``: the surviving anchors with a fresh
+        ``RangeIndex``, and the number of rows removed.
+    """
+    if not isinstance(timeline, pd.DataFrame):
+        timeline = pd.read_parquet(timeline)
+    known = set(timeline["person_id"].astype(int))
+    keep = index["person_id"].astype(int).isin(known)
+    return index[keep].reset_index(drop=True), int((~keep).sum())
+
+
 def build_index(anchor, timeline=None):
     """The anchor index for one level, by name.
 
@@ -137,12 +171,17 @@ def build_index(anchor, timeline=None):
     ``--anchor`` and a future pytask that iterates ``registry.ANCHORS`` cannot
     disagree about what a level means.
 
+    The label-derived levels are filtered against the extract by
+    ``restrict_to_known``, so ``timeline`` is required for every level rather
+    than for ``lastevent`` alone.
+
     Args:
         anchor: One of ``lastevent``, ``perlabel-scout``, ``perlabel``.
-        timeline: The timeline frame or path. Required for ``lastevent``.
+        timeline: The timeline frame or path. Required for every level.
 
     Returns:
-        Frame with ``person_id`` and ``cutoff``.
+        Tuple of ``(index, dropped)``: the anchor frame, and the number of rows
+        dropped for naming a patient the extract does not carry.
 
     Raises:
         ValueError: For ``shared``, which is gated on B1, and for any unknown
@@ -151,11 +190,17 @@ def build_index(anchor, timeline=None):
     if anchor == "lastevent":
         if timeline is None:
             raise ValueError("the lastevent index needs the timeline summary")
-        return lastevent_index(timeline)
-    if anchor == "perlabel-scout":
-        return perlabel_index(SCOUT_TASKS)
-    if anchor == "perlabel":
-        return perlabel_index(TASKS)
+        # Built from the timeline itself, so every patient is known by
+        # construction and the filter would be a no-op that costs a read.
+        return lastevent_index(timeline), 0
+    if anchor in ("perlabel-scout", "perlabel"):
+        if timeline is None:
+            raise ValueError(
+                f"the {anchor} index needs the timeline summary to drop labels "
+                "for patients the extract does not carry"
+            )
+        tasks = SCOUT_TASKS if anchor == "perlabel-scout" else TASKS
+        return restrict_to_known(perlabel_index(tasks), timeline)
     if anchor == "shared":
         raise ValueError(
             "the shared anchor needs the outcome window declared in Study Design "

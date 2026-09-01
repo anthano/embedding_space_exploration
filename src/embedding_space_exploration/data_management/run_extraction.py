@@ -151,7 +151,7 @@ def main(argv=None):
     args = _parse(argv)
     key, cell_ids = resolve_key(args)
 
-    index = anchors.build_index(args.anchor, timeline=TIMELINE)
+    index, dropped = anchors.build_index(args.anchor, timeline=TIMELINE)
     if args.limit:
         # A smoke test, and the only supported way to run a partial cell. It
         # writes to its own anchor level so a truncated matrix can never be
@@ -169,6 +169,15 @@ def main(argv=None):
     print(f"key      {key_slug(key)}", flush=True)
     print(f"cells    {', '.join(sorted(cell_ids))}", flush=True)
     print(f"anchor   {args.anchor_dir}  ({len(index):,} anchors)", flush=True)
+    if dropped:
+        # Printed unconditionally, not behind a verbosity flag: it is a change to
+        # the cohort every downstream number is computed on, and the same line
+        # has to appear in the log of every cell so a reader can check they
+        # agree. The count also lands in extraction.json beside the matrix.
+        print(
+            f"dropped  {dropped:,} anchors naming patients absent from the extract",
+            flush=True,
+        )
     print(f"outputs  {', '.join(str(path) for path in targets.values())}", flush=True)
     if args.plan:
         return 0
@@ -181,6 +190,7 @@ def main(argv=None):
         batch_size=args.batch_size,
         device=args.device,
         progress=progress_logger(len(index)),
+        provenance_extra={"n_anchors_dropped": dropped},
     )
     print(
         f"done in {record['seconds'] / 60:.1f}m on {record['device']}  "

@@ -16,6 +16,7 @@ from embedding_space_exploration.data_management.anchors import (
     build_index,
     lastevent_index,
     perlabel_index,
+    restrict_to_known,
 )
 from embedding_space_exploration.data_management.ehrshot import ASSETS, TASKS
 
@@ -119,3 +120,79 @@ def test_the_scout_is_a_small_fraction_of_the_full_perlabel_anchor():
     assert len(scout) == 14_204
     assert len(full) == 381_522
     assert len(scout) / len(full) < 0.05
+
+
+def _timeline(person_ids):
+    return pd.DataFrame(
+        {
+            "person_id": person_ids,
+            "last_event": pd.to_datetime(["2021-06-01"] * len(person_ids)),
+        }
+    )
+
+
+def test_labelled_patients_absent_from_the_extract_are_dropped():
+    # The failure this exists to prevent: five patients the EHRSHOT label files
+    # name and the staged MEDS extract does not carry. `meds_reader` raises
+    # KeyError on the first one, and it killed four cells at 14,000 of 14,204
+    # rows with nothing written. Ten anchors are not worth a matrix.
+    index = pd.DataFrame(
+        {
+            "person_id": [3, 999, 3],
+            "cutoff": pd.to_datetime(["2021-01-01", "2021-02-02", "2021-03-03"]),
+        }
+    )
+
+    kept, dropped = restrict_to_known(index, _timeline([3]))
+
+    assert dropped == 1
+    assert kept["person_id"].tolist() == [3, 3]
+
+
+def test_the_filter_reindexes_so_the_vectors_stay_aligned():
+    # `extract_resumable` concatenates the keys with positionally-produced
+    # vectors, so a survivor that kept its pre-filter label misaligns the matrix.
+    index = pd.DataFrame(
+        {"person_id": [999, 3], "cutoff": pd.to_datetime(["2021-01-01", "2021-02-02"])}
+    )
+
+    kept, _ = restrict_to_known(index, _timeline([3]))
+
+    assert kept.index.tolist() == [0]
+
+
+def test_an_extract_carrying_every_labelled_patient_drops_nothing():
+    index = pd.DataFrame(
+        {"person_id": [3, 7], "cutoff": pd.to_datetime(["2021-01-01", "2021-02-02"])}
+    )
+
+    kept, dropped = restrict_to_known(index, _timeline([3, 7, 11]))
+
+    assert dropped == 0
+    assert len(kept) == 2
+
+
+def test_build_index_filters_the_label_levels(stub_labels):
+    stub_labels(
+        {
+            task: ([(3, "2021-01-01"), (999, "2021-02-02")] if i == 0 else [])
+            for i, task in enumerate(SCOUT_TASKS)
+        }
+    )
+
+    index, dropped = build_index("perlabel-scout", timeline=_timeline([3]))
+
+    assert dropped == 1
+    assert index["person_id"].tolist() == [3]
+
+
+def test_lastevent_is_filtered_by_construction():
+    index, dropped = build_index("lastevent", timeline=_timeline([3, 7]))
+
+    assert dropped == 0
+    assert index["person_id"].tolist() == [3, 7]
+
+
+def test_the_perlabel_levels_need_the_timeline_to_filter_against():
+    with pytest.raises(ValueError, match="timeline"):
+        build_index("perlabel-scout")

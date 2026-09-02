@@ -116,7 +116,7 @@ source ~/.bashrc
 pixi --version
 ```
 
-Then clone — **into project storage, not `$HOME`**. The 16 matrices this run produces
+Then clone — **into project storage, not `$HOME`**. The 32 matrices this run produces
 are ~1 GB (6,731 × 768 float32 per `lastevent` cell, 14,204 × 768 per `perlabel-scout`
 cell, ×16), they land in `$REPO/bld/`, and home directories on Spartan are small and
 quota'd. pixi's own package cache is worth moving off home for the same reason:
@@ -225,10 +225,74 @@ Progress lines report anchors/s and an ETA. **Read them on the first run** — t
 walltime and the sizing of any future `perlabel` submission both rest on a throughput
 number this project has never measured on a real GPU.
 
+## Check before you copy
+
+The transfer is the cheap half. What is expensive is discovering three weeks into the
+battery that one cell's rows are in a different order from the other fifteen, because
+CKA, the paired contrasts and the battery all read row *i* of two matrices as the same
+anchor — a misalignment produces numbers rather than an error.
+
+```bash
+cd $REPO/hpc/spartan
+pixi run python check_run.py
+```
+
+It needs no GPU and no model weights: every check is a cross-check between files the run
+already wrote. Exit status is 0 when nothing failed. What it settles, in the order the
+failures matter:
+
+- **No `_journal/` directory survives.** `extract_resumable` deletes it as its last act,
+  after verifying it holds exactly as many rows as the index — so a journal still on
+  disk *is* the run's own statement that the element was killed. Re-submit the same
+  `sbatch` rather than copying that cell.
+- **All 32 cell directories exist**, each with `embeddings.parquet`,
+  `truncation.parquet` and `extraction.json`. Sixteen per anchor level, because
+  last-token and mean-pool are two matrices off one forward pass.
+- **Every cell at an anchor carries the same anchors in the same order**, and that order
+  is `ordered_index`'s. The check that justifies the script.
+- **`truncation_side` is `left` in all 32 records**, and `device` is `cuda`. The first
+  is the finding the module docstring calls load-bearing; the second is why two cells
+  are comparable in the last decimals.
+- **`truncated_share` falls and `median_covered` rises with context**, within each
+  family. If they do not move, every cell read the same opening tokens and P1's null was
+  built into the design rather than measured — which is the failure Study Design Freeze
+  §7 names twice.
+- **No NaN, no all-zero rows, no cell that is an exact copy of another.** Reading the
+  backbone through `AutoModel` silently reinitialises the embedding table;
+  `n_empty_histories` in bulk means cutoffs arrived as `NaT` and patients were embedded
+  as a single PAD token. Both are green runs that produce noise.
+- **Throughput per key.** Printed rather than judged: this is the first measurement of
+  this pipeline on a real GPU, and it is what sizes any future `perlabel` submission.
+
+Skim the logs for the two silent ones the files cannot show, then archive them beside
+the matrices — they age out of `logs/` and the throughput lines are the record:
+
+```bash
+grep -il "newly initialized\|were not used when initializing" logs/extract-*.out
+grep -h "^dropped" logs/extract-*.out | sort | uniq -c   # one distinct count per anchor
+```
+
 ## Bring the results home
 
 ```bash
-rsync -avhP you@spartan:...:$REPO/bld/tier1 ./bld/
+# from the laptop, at the repo root
+rsync -avhP \
+  you@spartan.hpc.unimelb.edu.au:/data/gpfs/projects/punim1993/students/Anoja/embedding_space_exploration/bld/tier1 \
+  ./bld/
 ```
 
-The matrices are the deliverable; everything downstream runs on the laptop against them.
+Then re-run the same checks locally against what actually arrived, which is also the
+cheapest possible verification of the transfer:
+
+```bash
+pixi run python hpc/spartan/check_run.py
+```
+
+Leave the cluster copy in place until that passes. The matrices are the deliverable;
+everything downstream runs on the laptop against them.
+
+# Dataset
+
+Analyses use the 6,731 patients present in the EHRSHOT MEDS extract; 8 of the 6,739
+patients in the official splits file have labels but no timeline in the MEDS release and
+are excluded (216 of 381,522 anchors, 0.06%).

@@ -519,6 +519,16 @@ def timed(function, *args, **kwargs):
 # per cell at the end, and no merge step anybody has to get right -- the journal
 # is an implementation detail that is consumed and deleted on completion.
 #
+# Which is exactly why a *finished* cell needs its own guard rather than the
+# journal. The journal is gone once the matrix is written, so a re-submitted
+# element finds nothing to resume from and, without `is_complete`, recomputes
+# the whole cell and overwrites the matrix with a bitwise-identical copy. That
+# is what `extract.slurm`'s re-submission strategy rests on: an array element is
+# re-run to finish the cells that died, and the cells that did not must cost
+# seconds. At the `perlabel` anchor, where an element is measured in tens of
+# hours, redoing a finished one is the difference between a re-submission and a
+# second full run.
+#
 # A resumed run is bitwise identical to a fresh one, which is the property that
 # makes this safe to use by default. Blocks are whole numbers of batches, so a
 # resume point is always a batch boundary, so every batch after it contains the
@@ -570,6 +580,52 @@ def read_journal(out_dir):
                 stale.unlink(missing_ok=True)
             break
     return pa.concat_tables(blocks) if blocks else None
+
+
+def is_complete(index, targets, work_dir):
+    """Whether every target already holds a finished matrix for ``index``.
+
+    The completion marker the journal cannot be. ``read_journal`` returns
+    ``None`` both for a cell that has never run and for one that finished --
+    the journal is deleted on success -- so resume alone cannot tell them
+    apart, and a re-submitted array element would recompute a cell it already
+    has.
+
+    Deliberately conservative on all three counts:
+
+    * **Every** target, not just ``work_dir``. The matrices are written in a
+      loop, so a crash between the two ``to_parquet`` calls leaves one pooling
+      complete and the other absent.
+    * ``extraction.json`` too, which is written after every matrix. Without it
+      there is nothing to return, and its absence means the run died in the
+      last few lines.
+    * No journal. A complete matrix beside a live journal means a later run
+      started and died; recomputing is both correct and self-healing, where
+      skipping would leave the journal behind for the next reader to puzzle
+      over.
+
+    Row counts come from the parquet footer rather than the data, so this is
+    metadata reads and not 43 MB per cell.
+
+    Args:
+        index: The anchor index the cell would run over.
+        targets: ``{pooling: output directory}``, as ``extract_resumable`` takes.
+        work_dir: The directory the journal lives in.
+
+    Returns:
+        True when the cell can be skipped.
+    """
+    import pyarrow.parquet as pq
+
+    if journal_dir(work_dir).exists():
+        return False
+    for directory in targets.values():
+        matrix = directory / "embeddings.parquet"
+        if not matrix.exists() or not (directory / "extraction.json").exists():
+            return False
+        if pq.ParquetFile(matrix).metadata.num_rows != len(index):
+            return False
+    return True
 
 
 def write_block(out_dir, table):
@@ -648,6 +704,11 @@ def extract_resumable(
     The entry point a cluster job calls. One process, one pass, one
     ``embeddings.parquet`` per pooling at the end.
 
+    Returns immediately when the cell is already finished (see ``is_complete``),
+    without loading a model, and the returned record carries ``skipped``. That
+    is what makes re-submitting a whole array cheap rather than a second full
+    run.
+
     Args:
         database: An open ``meds_reader`` database.
         index: DataFrame with ``person_id`` and ``cutoff`` columns.
@@ -675,6 +736,16 @@ def extract_resumable(
     work_dir = next(iter(targets.values()))
     for directory in targets.values():
         directory.mkdir(parents=True, exist_ok=True)
+
+    if is_complete(index, targets, work_dir):
+        # Return the record the finished run wrote rather than a synthesised
+        # one: its `seconds` and `device` describe the pass that actually
+        # produced these matrices, and re-stamping them with this process's
+        # wall clock would turn the only throughput measurement the project has
+        # into a number about doing nothing.
+        record = json.loads((work_dir / "extraction.json").read_text())
+        record["skipped"] = True
+        return record
 
     existing = read_journal(work_dir)
     done = 0 if existing is None else existing.num_rows

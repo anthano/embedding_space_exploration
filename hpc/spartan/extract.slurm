@@ -40,6 +40,11 @@
 # element killed at the walltime is *re-submitted*, not restarted: run the same
 # sbatch again and finished elements exit in seconds while unfinished ones pick
 # up mid-cell. Nothing here needs `--requeue` to be safe.
+#
+# The two halves of that are separate mechanisms. A *partial* cell resumes from
+# its journal; a *finished* one is caught by `is_complete`, which looks for the
+# matrices, because the journal is deleted on success and so cannot distinguish
+# a completed cell from one that never ran.
 
 #SBATCH --job-name=esx-extract
 #SBATCH --array=0-15

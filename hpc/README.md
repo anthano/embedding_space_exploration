@@ -221,6 +221,12 @@ the journal ends, and a resumed run is bitwise identical to an uninterrupted one
 element killed at the walltime is *re-submitted*, not restarted: run the same `sbatch`
 again and finished elements exit in seconds while unfinished ones pick up mid-cell.
 
+Two separate mechanisms, and it is worth knowing which does what. The journal covers a
+*partial* cell. A *finished* one is caught by `is_complete`, which checks for the
+matrices themselves — the journal is deleted on success, so it cannot tell a completed
+cell from one that never started, and without the second check a re-submitted array
+would recompute every cell it already had.
+
 Progress lines report anchors/s and an ETA. **Read them on the first run** — the
 walltime and the sizing of any future `perlabel` submission both rest on a throughput
 number this project has never measured on a real GPU.

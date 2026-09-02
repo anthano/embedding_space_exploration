@@ -192,6 +192,17 @@ def main(argv=None):
         progress=progress_logger(len(index)),
         provenance_extra={"n_anchors_dropped": dropped},
     )
+    if record.get("skipped"):
+        # Distinguished from a finished run rather than printed as one: the
+        # figures below belong to the pass that produced the matrices, and a log
+        # line claiming this element took 8 minutes when it took two seconds is
+        # how a re-submission gets read as a throughput measurement.
+        print(
+            f"already complete: {record['n_anchors']:,} anchors on "
+            f"{record['device']}, matrices left untouched",
+            flush=True,
+        )
+        return 0
     print(
         f"done in {record['seconds'] / 60:.1f}m on {record['device']}  "
         f"truncated {100 * record['truncated_share']:.1f}%  "

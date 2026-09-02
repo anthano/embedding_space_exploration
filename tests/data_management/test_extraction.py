@@ -17,6 +17,7 @@ from embedding_space_exploration.data_management.extraction import (
     _cutoff,
     extract_resumable,
     extraction_record,
+    is_complete,
     journal_dir,
     ordered_index,
     pool,
@@ -326,3 +327,118 @@ def test_the_journal_is_cleared_once_the_matrix_is_written(tmp_path, database):
     assert json.loads((out / "extraction.json").read_text())["cell_id"] == (
         "gpt-base-512-last"
     )
+
+
+# ======================================================================================
+# The completion guard
+# ======================================================================================
+# Unit tests, deliberately: the guard's whole job is to return *before*
+# `load_extractor`, so a fake matrix and a database that would raise if touched
+# are enough to prove it, and the proof runs on a laptop with neither `hf_ehr`
+# nor the extract.
+
+
+def finished_cell(directory, n_rows, cell_id="gpt-base-512-last"):
+    """A cell directory shaped like one a completed run left behind."""
+    directory.mkdir(parents=True, exist_ok=True)
+    frame = pd.DataFrame(
+        {
+            "person_id": range(n_rows),
+            "cutoff": pd.NaT,
+            "dim_0": np.arange(n_rows, dtype=float),
+        }
+    )
+    frame.to_parquet(directory / "embeddings.parquet", index=False)
+    (directory / "extraction.json").write_text(
+        json.dumps({"cell_id": cell_id, "n_anchors": n_rows, "device": "cuda"})
+    )
+    return directory
+
+
+def test_a_finished_cell_is_not_recomputed(tmp_path):
+    """The property `extract.slurm`'s re-submission strategy rests on.
+
+    The journal is deleted on success, so resume alone cannot tell a completed
+    cell from one that never ran. Without this guard a re-submitted array
+    recomputes every element it already has -- seconds at this anchor, tens of
+    hours at ``perlabel``.
+
+    The database is ``None`` and no model is prefetched, so reaching the forward
+    pass raises rather than passing quietly.
+    """
+    index = pd.DataFrame({"person_id": range(4), "cutoff": pd.NaT})
+    targets = {
+        "last": finished_cell(tmp_path / "last", 4),
+        "mean": finished_cell(tmp_path / "mean", 4, "gpt-base-512-mean"),
+    }
+
+    record = extract_resumable(None, index, CELLS["gpt-base-512-last"], targets)
+
+    assert record["skipped"] is True
+    # The finished run's own provenance, not this process's: `seconds` here would
+    # be a measurement of doing nothing, and the throughput it reports is the
+    # only sizing input a later `perlabel` submission has.
+    assert record["device"] == "cuda"
+    assert record["n_anchors"] == 4
+
+
+def test_a_skipped_cell_leaves_its_matrix_untouched(tmp_path):
+    """Skipping means not writing, not writing the same bytes again."""
+    index = pd.DataFrame({"person_id": range(4), "cutoff": pd.NaT})
+    targets = {"last": finished_cell(tmp_path / "last", 4)}
+    matrix = targets["last"] / "embeddings.parquet"
+    before = matrix.read_bytes()
+
+    extract_resumable(None, index, CELLS["gpt-base-512-last"], targets)
+
+    assert matrix.read_bytes() == before
+
+
+def test_a_short_matrix_is_not_mistaken_for_a_finished_one(tmp_path):
+    """A row count that does not match the index is not a finished cell.
+
+    The case that would be silent: a matrix left by a run over a *different*
+    anchor set. Vectors are concatenated positionally against the keys, so
+    accepting it would file one index's embeddings under another's.
+    """
+    directory = finished_cell(tmp_path / "last", 4)
+    index = pd.DataFrame({"person_id": range(6), "cutoff": pd.NaT})
+
+    assert not is_complete(index, {"last": directory}, directory)
+
+
+def test_a_matrix_without_its_record_is_not_finished(tmp_path):
+    """`extraction.json` is written last, so its absence dates the death."""
+    directory = finished_cell(tmp_path / "last", 4)
+    (directory / "extraction.json").unlink()
+    index = pd.DataFrame({"person_id": range(4), "cutoff": pd.NaT})
+
+    assert not is_complete(index, {"last": directory}, directory)
+
+
+def test_one_finished_pooling_does_not_finish_the_other(tmp_path):
+    """The matrices are written in a loop, so a crash can leave one of two."""
+    index = pd.DataFrame({"person_id": range(4), "cutoff": pd.NaT})
+    targets = {
+        "last": finished_cell(tmp_path / "last", 4),
+        "mean": tmp_path / "mean",
+    }
+    targets["mean"].mkdir()
+
+    assert not is_complete(index, targets, targets["last"])
+
+
+def test_a_live_journal_beside_a_matrix_is_not_finished(tmp_path):
+    """A later run started and died. Recomputing is correct and self-healing.
+
+    Skipping would be defensible for the matrix and wrong for the directory: the
+    journal would survive as an artifact that says, to anything reading later,
+    that this cell never completed.
+    """
+    import pyarrow as pa
+
+    directory = finished_cell(tmp_path / "last", 4)
+    write_block(directory, pa.table({"person_id": [0, 1]}))
+    index = pd.DataFrame({"person_id": range(4), "cutoff": pd.NaT})
+
+    assert not is_complete(index, {"last": directory}, directory)
